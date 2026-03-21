@@ -1,26 +1,96 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ── Default: Dark Theme ───────────────────────────────────────── */
+:root, [data-theme="dark"] {
+  --bg: #06060f;
+  --surface: #0b0b1c;
+  --surface2: #10102a;
+  --border: #1a1a35;
+  --border2: #14142e;
+  --text: #ededff;
+  --text2: #6868a0;
+  --text3: #30305a;
+  --blue: #7c6ff0;
+  --green: #22d79a;
+  --orange: #f5a020;
+  --purple: #b080f8;
+  --red: #e85555;
+  --cyan: #22d3ee;
+  --shadow: 0 8px 40px rgba(0,0,0,0.7);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ── Light Theme ────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg: #f4f4fa;
+  --surface: #ffffff;
+  --surface2: #f0f0f8;
+  --border: #ddddf0;
+  --border2: #e8e8f5;
+  --text: #0e0e2e;
+  --text2: #4a4a7a;
+  --text3: #9090b8;
+  --blue: #5b52d6;
+  --green: #0ea572;
+  --orange: #d47a10;
+  --purple: #8840d8;
+  --red: #cc3333;
+  --cyan: #0891b2;
+  --shadow: 0 8px 40px rgba(0,0,0,0.12);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+* { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+.font-mono, code, pre, kbd { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+/* ── ReactFlow dark mode ────────────────────────────────────────── */
+.react-flow { background: var(--bg) !important; }
+.react-flow__pane { background: var(--bg) !important; }
+.react-flow__background { background: var(--bg) !important; }
+/* Remove ReactFlow's default white node wrapper so our custom nodes control their own bg */
+.react-flow__node { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; border-radius: 0 !important; }
+.react-flow__node.selected > div { outline: none !important; }
+/* Controls */
+.react-flow__controls { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; overflow: hidden; }
+.react-flow__controls-button { background: var(--surface) !important; border-color: var(--border) !important; color: var(--text2) !important; fill: var(--text2) !important; }
+.react-flow__controls-button:hover { background: var(--surface2) !important; }
+.react-flow__controls-button svg { fill: var(--text2) !important; }
+/* Minimap */
+.react-flow__minimap { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; overflow: hidden !important; }
+.react-flow__minimap-svg { background: var(--surface) !important; }
+.react-flow__minimap-mask { fill: rgba(6,6,15,0.6) !important; }
+/* Selection box */
+.react-flow__selection { background: rgba(124,111,240,0.06) !important; border-color: var(--blue) !important; }
+.react-flow__nodesselection-rect { border-color: var(--blue) !important; background: rgba(124,111,240,0.06) !important; }
+/* Edge labels */
+.react-flow__edge-textbg { fill: var(--surface) !important; }
+.react-flow__edge-text { fill: var(--text2) !important; }
+
+/* ── Consistent form field inputs across all config tabs ─────── */
+.field-inputs > input,
+.field-inputs > select {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  outline: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.field-inputs > select {
+  appearance: none;
+  cursor: pointer;
 }

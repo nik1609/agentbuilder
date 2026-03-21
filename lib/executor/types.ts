@@ -1,0 +1,39 @@
+import { AgentSchema, TraceEvent } from '@/types/agent'
+
+export interface ModelRunConfig {
+  provider: 'google' | 'openai-compatible' | 'anthropic'
+  modelId: string
+  apiKey?: string
+  baseUrl?: string
+  temperature?: number
+  maxTokens?: number
+}
+
+export interface ExecutionContext {
+  agentId: string
+  runId: string
+  input: Record<string, unknown>
+  variables: Record<string, unknown>
+  trace: TraceEvent[]
+  tokens: number
+  startTime: number
+  onTrace?: (event: TraceEvent) => void
+  modelConfigs?: Record<string, ModelRunConfig>
+}
+
+export interface NodeResult {
+  output: unknown
+  tokens?: number
+  error?: string
+}
+
+export interface ExecutionResult {
+  output: unknown
+  tokens: number
+  latencyMs: number
+  trace: TraceEvent[]
+  status: 'completed' | 'failed' | 'waiting_hitl'
+  error?: string
+}
+
+export type { AgentSchema }
