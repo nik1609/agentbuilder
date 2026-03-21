@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Brain, Wrench, GitBranch, UserCheck, ChevronDown, Plus, Trash2, Shield, Database } from 'lucide-react'
 import { NodeData, MemorySource } from '@/types/agent'
 import { useRegistry } from '@/lib/hooks/useRegistry'
@@ -18,7 +18,6 @@ interface NodeConfigPanelProps {
   onClose: () => void
 }
 
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
 
 const NODE_META: Record<string, { color: string; bg: string; icon: React.ElementType; label: string }> = {
   llm:       { color: '#7c6ff0', bg: 'rgba(124,111,240,0.1)', icon: Brain,     label: 'LLM Node' },
@@ -52,7 +51,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   const { items: memoryConfigs} = useRegistry<MemoryConfig>('/api/memory')
 
   const [label, setLabel]               = useState(nodeData.label)
-  const [model, setModel]               = useState(nodeData.model ?? 'gemini-2.5-flash')
+  const [model, setModel]               = useState(nodeData.model ?? '')
   const [temperature, setTemperature]   = useState(String(nodeData.temperature ?? 0.7))
   const [systemPrompt, setSystemPrompt] = useState(nodeData.systemPrompt ?? '')
   const [selectedPromptId, setSelectedPromptId] = useState('')
@@ -70,22 +69,20 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
 
   const upstreamNodes = allNodes.filter(n => n.id !== nodeId && n.data.nodeType !== 'input' && n.data.nodeType !== 'output')
 
-  const save = () => {
-    const updates: Partial<NodeData> = { label }
-    if (nodeData.nodeType === 'llm') {
-      updates.model = model
-      updates.temperature = parseFloat(temperature)
-      updates.systemPrompt = systemPrompt
-      updates.guardrailId = guardrailId || undefined
-      updates.memorySources = memorySources
+  // When model configs finish loading, auto-select the first config if no valid model is set
+  const modelConfigsLoaded = useRef(false)
+  useEffect(() => {
+    if (modelConfigs.length === 0) return
+    if (modelConfigsLoaded.current) return
+    modelConfigsLoaded.current = true
+    const valid = modelConfigs.some(m => m.name === model)
+    if (!valid) {
+      const first = modelConfigs[0].name
+      setModel(first)
+      onUpdate({ model: first })
     }
-    if (nodeData.nodeType === 'tool') updates.toolName = toolName
-    if (nodeData.nodeType === 'condition') updates.condition = condition
-    if (nodeData.nodeType === 'hitl') updates.question = question
-    onUpdate(updates)
-  }
-
-  useEffect(() => { save() }, [label, model, temperature, systemPrompt, guardrailId, memorySources, toolName, condition, question])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelConfigs.length])
 
   const addMemorySource = () => {
     if (newMemType === 'agent_runs' && !newMemConfigId) return
@@ -98,13 +95,19 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
       nodeId: newMemType === 'node_output' ? newMemNodeId : undefined,
       nodeLabel: newMemType === 'node_output' ? (node?.data.label ?? newMemNodeId) : undefined,
     }
-    setMemorySources(prev => [...prev, newSrc])
+    const updated = [...memorySources, newSrc]
+    setMemorySources(updated)
+    onUpdate({ memorySources: updated })
     setAddingMemory(false)
     setNewMemConfigId('')
     setNewMemNodeId('')
   }
 
-  const removeMemorySource = (id: string) => setMemorySources(prev => prev.filter(s => s.id !== id))
+  const removeMemorySource = (id: string) => {
+    const updated = memorySources.filter(s => s.id !== id)
+    setMemorySources(updated)
+    onUpdate({ memorySources: updated })
+  }
 
   const meta = NODE_META[nodeData.nodeType ?? ''] ?? NODE_META.llm
   const Icon = meta.icon
@@ -136,26 +139,29 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         <Field label="Label">
-          <input value={label} onChange={e => setLabel(e.target.value)} style={inputStyle} placeholder="Node label" />
+          <input value={label} onChange={e => { setLabel(e.target.value); onUpdate({ label: e.target.value }) }} style={inputStyle} placeholder="Node label" />
         </Field>
 
         {/* LLM config */}
         {nodeData.nodeType === 'llm' && (<>
           <Field label="Model Config">
             <div style={{ position: 'relative' }}>
-              <select value={model} onChange={e => setModel(e.target.value)} style={selectStyle}>
-                {modelConfigs.length > 0
-                  ? modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)
-                  : FALLBACK_MODELS.map(m => <option key={m}>{m}</option>)
-                }
-              </select>
+              {modelConfigs.length === 0 ? (
+                <select disabled style={{ ...selectStyle, color: 'var(--text3)' }}>
+                  <option>{model || 'Loading models…'}</option>
+                </select>
+              ) : (
+                <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
+                </select>
+              )}
               <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
             </div>
           </Field>
 
           <Field label="Temperature">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input value={temperature} onChange={e => setTemperature(e.target.value)} type="range" min="0" max="2" step="0.1" style={{ flex: 1, accentColor: meta.color }} />
+              <input value={temperature} onChange={e => { setTemperature(e.target.value); onUpdate({ temperature: parseFloat(e.target.value) }) }} type="range" min="0" max="2" step="0.1" style={{ flex: 1, accentColor: meta.color }} />
               <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: meta.color, width: 28, textAlign: 'center', padding: '3px 6px', borderRadius: 5, background: meta.bg }}>
                 {parseFloat(temperature).toFixed(1)}
               </span>
@@ -165,7 +171,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
           {/* Guardrail */}
           <Field label="Guardrail">
             <div style={{ position: 'relative' }}>
-              <select value={guardrailId} onChange={e => setGuardrailId(e.target.value)} style={{ ...selectStyle, color: guardrailId ? 'var(--red)' : 'var(--text3)' }}>
+              <select value={guardrailId} onChange={e => { setGuardrailId(e.target.value); onUpdate({ guardrailId: e.target.value || undefined }) }} style={{ ...selectStyle, color: guardrailId ? 'var(--red)' : 'var(--text3)' }}>
                 <option value="">— None —</option>
                 {guardrails.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
@@ -241,14 +247,14 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
           <Field label="System Prompt">
             {prompts.length > 0 && (
               <div style={{ position: 'relative', marginBottom: 8 }}>
-                <select value={selectedPromptId} onChange={e => { setSelectedPromptId(e.target.value); const p = prompts.find(x => x.id === e.target.value); if (p) setSystemPrompt(p.content) }} style={{ ...selectStyle, fontSize: 11, color: 'var(--text3)' }}>
+                <select value={selectedPromptId} onChange={e => { setSelectedPromptId(e.target.value); const p = prompts.find(x => x.id === e.target.value); if (p) { setSystemPrompt(p.content); onUpdate({ systemPrompt: p.content }) } }} style={{ ...selectStyle, fontSize: 11, color: 'var(--text3)' }}>
                   <option value="">— pick from registry —</option>
                   {prompts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
               </div>
             )}
-            <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={6} placeholder="You are a helpful assistant..." style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6, minHeight: 96 }} />
+            <textarea value={systemPrompt} onChange={e => { setSystemPrompt(e.target.value); onUpdate({ systemPrompt: e.target.value }) }} rows={6} placeholder="You are a helpful assistant..." style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6, minHeight: 96 }} />
           </Field>
         </>)}
 
@@ -257,7 +263,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
           <Field label="Tool">
             {tools.length > 0 ? (
               <div style={{ position: 'relative' }}>
-                <select value={toolName} onChange={e => setToolName(e.target.value)} style={selectStyle}>
+                <select value={toolName} onChange={e => { setToolName(e.target.value); onUpdate({ toolName: e.target.value }) }} style={selectStyle}>
                   <option value="">— select tool —</option>
                   {tools.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
                 </select>
@@ -277,7 +283,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
         {/* Condition config */}
         {nodeData.nodeType === 'condition' && (<>
           <Field label="Condition Expression">
-            <textarea value={condition} onChange={e => setCondition(e.target.value)} rows={4} placeholder="e.g. the response mentions an error" style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }} />
+            <textarea value={condition} onChange={e => { setCondition(e.target.value); onUpdate({ condition: e.target.value }) }} rows={4} placeholder="e.g. the response mentions an error" style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }} />
           </Field>
           <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(245,160,32,0.08)', border: '1px solid rgba(245,160,32,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
             Evaluated by LLM. <span style={{ color: '#22d79a', fontWeight: 700 }}>True</span> → top handle · <span style={{ color: 'var(--red)', fontWeight: 700 }}>False</span> → bottom handle
@@ -287,7 +293,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
         {/* HITL config */}
         {nodeData.nodeType === 'hitl' && (<>
           <Field label="Checkpoint Question">
-            <textarea value={question} onChange={e => setQuestion(e.target.value)} rows={4} placeholder="What should the reviewer check before approving?" style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }} />
+            <textarea value={question} onChange={e => { setQuestion(e.target.value); onUpdate({ question: e.target.value }) }} rows={4} placeholder="What should the reviewer check before approving?" style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }} />
           </Field>
           <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(176,128,248,0.08)', border: '1px solid rgba(176,128,248,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
             Pipeline pauses here. Resume via dashboard or API.

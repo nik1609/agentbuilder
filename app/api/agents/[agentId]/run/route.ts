@@ -75,7 +75,7 @@ export async function POST(
     for (const node of schema.nodes) {
       if (node.data.nodeType === 'tool' && node.data.toolName) {
         const t = toolMap[node.data.toolName as string]
-        if (t) node.data.toolConfig = { endpoint: t.endpoint ?? '', method: t.method ?? 'POST', headers: t.headers ?? {}, timeout: t.timeout ?? 5000, type: t.type ?? 'http' }
+        if (t) node.data.toolConfig = { endpoint: t.endpoint ?? '', method: t.method ?? 'POST', headers: t.headers ?? {}, timeout: t.timeout ?? 5000, type: t.type ?? 'http', input_schema: t.input_schema ?? {} }
       }
     }
   }

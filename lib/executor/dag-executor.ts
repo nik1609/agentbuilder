@@ -95,16 +95,90 @@ async function executeLLMNode(
   return { output: text, tokens }
 }
 
+async function executeWebSearch(query: string, cfg: Record<string, unknown>): Promise<string> {
+  const provider = (cfg.provider as string) ?? 'duckduckgo'
+  const apiKey = (cfg.api_key as string) ?? ''
+  const maxResults = (cfg.max_results as number) ?? 5
+
+  if (provider === 'tavily') {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, api_key: apiKey, search_depth: 'basic', max_results: maxResults }),
+      signal: AbortSignal.timeout(10000),
+    })
+    const data = await res.json() as { results?: { title: string; url: string; content: string }[] }
+    return data.results?.map(r => `${r.title}\n${r.url}\n${r.content}`).join('\n\n') ?? 'No results'
+  }
+
+  if (provider === 'serper') {
+    const res = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-KEY': apiKey },
+      body: JSON.stringify({ q: query, num: maxResults }),
+      signal: AbortSignal.timeout(10000),
+    })
+    const data = await res.json() as { organic?: { title: string; link: string; snippet: string }[] }
+    return data.organic?.slice(0, maxResults).map(r => `${r.title}\n${r.link}\n${r.snippet}`).join('\n\n') ?? 'No results'
+  }
+
+  // DuckDuckGo Instant Answer (default — free, no key)
+  const params = new URLSearchParams({ q: query, format: 'json', no_html: '1', skip_disambig: '1' })
+  const res = await fetch(`https://api.duckduckgo.com/?${params}`, { signal: AbortSignal.timeout(6000) })
+  const data = await res.json() as { AbstractText?: string; AbstractURL?: string; RelatedTopics?: { Text?: string; FirstURL?: string }[] }
+  const abstract = data.AbstractText ? `${data.AbstractText}\n${data.AbstractURL ?? ''}` : ''
+  const related = (data.RelatedTopics ?? []).slice(0, maxResults).map(t => [t.Text, t.FirstURL].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
+  return [abstract, related].filter(Boolean).join('\n\n') || 'No results found for: ' + query
+}
+
+// ─── Template variable substitution ──────────────────────────────────────────
+// Supports: {{input}}, {{last_output}}, {{node.NODE_ID}}
+function resolveVars(template: string, ctx: ExecutionContext): string {
+  return template
+    .replace(/\{\{input\}\}/g, String(ctx.input ?? ''))
+    .replace(/\{\{last_output\}\}/g, String(ctx.variables.__last_output ?? ctx.input ?? ''))
+    .replace(/\{\{node\.([\w-]+)\}\}/g, (_, id) => String(ctx.nodeOutputs?.[id] ?? ''))
+}
+
+// ─── Dot-notation response extraction: "results.0.content" ──────────────────
+function extractPath(data: unknown, path: string): unknown {
+  if (!path.trim()) return data
+  return path.split('.').reduce((acc, key) => {
+    if (acc == null) return acc
+    if (Array.isArray(acc)) return acc[parseInt(key)]
+    return (acc as Record<string, unknown>)[key]
+  }, data)
+}
+
 async function executeToolNode(
   node: AgentNode,
   ctx: ExecutionContext
 ): Promise<NodeResult> {
   const toolCfg = node.data.toolConfig as Record<string, unknown> | undefined
-  const endpoint = toolCfg?.endpoint as string | undefined
   const toolType = (toolCfg?.type as string) ?? 'http'
+  const inputSchema = (toolCfg?.input_schema as Record<string, unknown>) ?? {}
 
+  // ── Built-in: Web Search ──────────────────────────────────────────────────
+  if (toolType === 'web_search') {
+    const query = String(ctx.variables.__last_output ?? ctx.input)
+    const result = await executeWebSearch(query, inputSchema)
+    return { output: result }
+  }
+
+  // ── Built-in: Web Scrape (Jina AI Reader) ─────────────────────────────────
+  if (toolType === 'web_scrape') {
+    const url = String(ctx.variables.__last_output ?? ctx.input)
+    const headers: Record<string, string> = { 'Accept': 'text/plain' }
+    const apiKey = inputSchema.api_key as string | undefined
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers, signal: AbortSignal.timeout(15000) })
+    const text = await res.text()
+    return { output: text }
+  }
+
+  // ── Function tool ─────────────────────────────────────────────────────────
   if (toolType === 'function') {
-    const code = endpoint
+    const code = toolCfg?.endpoint as string | undefined
     if (!code) return { output: `[Function tool ${node.data.toolName} has no code]` }
     try {
       // eslint-disable-next-line no-new-func
@@ -116,23 +190,52 @@ async function executeToolNode(
     }
   }
 
-  if (!endpoint) return { output: `[Tool ${node.data.toolName} skipped — no endpoint configured]` }
+  // ── HTTP tool (full-featured) ─────────────────────────────────────────────
+  const rawEndpoint = toolCfg?.endpoint as string | undefined
+  if (!rawEndpoint?.trim()) return { output: `[Tool ${node.data.toolName} skipped — no endpoint configured]` }
 
-  const body = {
-    input: ctx.variables.__last_output ?? ctx.input,
-    ...(toolCfg?.payload as object ?? {}),
+  const method = ((toolCfg?.method as string) ?? 'POST').toUpperCase()
+  const timeout = (toolCfg?.timeout as number) ?? 5000
+
+  // Resolve variables in URL
+  const resolvedUrl = resolveVars(rawEndpoint, ctx)
+
+  // Build headers — resolve vars in header values too
+  const baseHeaders = toolCfg?.headers as Record<string, string> ?? {}
+  const resolvedHeaders: Record<string, string> = {}
+  for (const [k, v] of Object.entries(baseHeaders)) resolvedHeaders[k] = resolveVars(v, ctx)
+
+  const fetchInit: RequestInit = { method, headers: resolvedHeaders, signal: AbortSignal.timeout(timeout) }
+
+  if (!['GET', 'HEAD', 'DELETE'].includes(method)) {
+    const bodyTemplate = inputSchema.body_template as string | undefined
+
+    if (bodyTemplate?.trim()) {
+      // User-defined body template — substitute vars then send as-is
+      const resolved = resolveVars(bodyTemplate, ctx)
+      resolvedHeaders['Content-Type'] = resolvedHeaders['Content-Type'] ?? 'application/json'
+      fetchInit.body = resolved
+    } else {
+      // Default: send last_output as { input: "..." }
+      resolvedHeaders['Content-Type'] = 'application/json'
+      fetchInit.body = JSON.stringify({ input: String(ctx.variables.__last_output ?? ctx.input ?? '') })
+    }
   }
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(toolCfg?.headers as Record<string, string> ?? {}) },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout((toolCfg?.timeout as number) ?? 5000),
-  })
+  const res = await fetch(resolvedUrl, fetchInit)
+  const rawText = await res.text()
 
-  if (!res.ok) throw new Error(`Tool ${node.data.toolName} returned ${res.status}`)
-  const data = await res.json()
-  return { output: data }
+  if (!res.ok) throw new Error(`Tool ${node.data.toolName} returned ${res.status}: ${rawText.slice(0, 200)}`)
+
+  // Parse response
+  let parsed: unknown = rawText
+  try { parsed = JSON.parse(rawText) } catch { /* keep as text */ }
+
+  // Extract specific path if configured
+  const responsePath = (inputSchema.response_path as string) ?? ''
+  const output = responsePath ? extractPath(parsed, responsePath) ?? parsed : parsed
+
+  return { output }
 }
 
 async function executeConditionNode(
