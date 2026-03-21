@@ -1,7 +1,7 @@
 import { AgentSchema, TraceEvent } from '@/types/agent'
 
 export interface ModelRunConfig {
-  provider: 'google' | 'openai-compatible' | 'anthropic'
+  provider: 'google' | 'openai-compatible' | 'anthropic' | 'ollama'
   modelId: string
   apiKey?: string
   baseUrl?: string
