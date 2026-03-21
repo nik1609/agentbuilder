@@ -113,7 +113,7 @@ function DataBlock({ data }: { data: unknown }) {
     if ('input' in d && 'model' in d) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {d.systemPrompt && (
+          {!!d.systemPrompt && (
             <div>
               <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>System Prompt</div>
               <pre style={{ margin: 0, fontSize: 10, color: 'var(--text3)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', lineHeight: 1.5 }}>
@@ -135,7 +135,7 @@ function DataBlock({ data }: { data: unknown }) {
     if ('output' in d && 'tokens' in d) {
       return (
         <div>
-          <div style={{ fontSize: 9, fontWeight: 700, color: '#b080f8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>Output ({d.tokens} tokens)</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: '#b080f8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>Output ({String(d.tokens)} tokens)</div>
           <pre style={{ margin: 0, fontSize: 11, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', lineHeight: 1.6 }}>
             {typeof d.output === 'string'
               ? d.output.slice(0, 800) + (d.output.length > 800 ? '…' : '')
