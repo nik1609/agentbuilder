@@ -69,27 +69,34 @@ export default function GuardrailsTab() {
 
   const formOpen = showForm || !!editingId
 
+  const ruleColor = (type: string) => type === 'input' ? 'var(--orange)' : 'var(--blue)'
+
   const RuleList = ({ rules, setter, type }: { rules: GuardrailRule[]; setter: React.Dispatch<React.SetStateAction<GuardrailRule[]>>; type: string }) => (
-    <div className="mt-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{type} Rules</span>
-        <button onClick={() => setter(r => [...r, makeRule(type)])}
-          className="text-[9px] px-1.5 py-0.5 rounded"
-          style={{ color: type === 'input' ? 'var(--orange)' : 'var(--blue)', border: `1px solid ${type === 'input' ? 'var(--orange)' : 'var(--blue)'}` }}>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{type} Rules</span>
+        <button
+          onClick={() => setter(r => [...r, makeRule(type)])}
+          style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 5, cursor: 'pointer', background: 'transparent', color: ruleColor(type), border: `1px solid ${ruleColor(type)}` }}
+        >
           + Add
         </button>
       </div>
-      {rules.map(rule => (
-        <div key={rule.id} className="flex items-center gap-2 mb-1.5">
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: rule.color }} />
-          <input value={rule.text} onChange={e => updateRule(rules, setter, rule.id, e.target.value)}
-            className="flex-1 px-2 py-1 rounded text-[10px] outline-none"
-            style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-          <button onClick={() => removeRule(rules, setter, rule.id)} className="p-0.5" style={{ color: 'var(--text3)' }}>
-            <X size={10} />
-          </button>
-        </div>
-      ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {rules.map(rule => (
+          <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: rule.color }} />
+            <input
+              value={rule.text}
+              onChange={e => updateRule(rules, setter, rule.id, e.target.value)}
+              style={{ flex: 1, height: 30, padding: '0 8px', borderRadius: 6, fontSize: 11, outline: 'none', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', boxSizing: 'border-box' }}
+            />
+            <button onClick={() => removeRule(rules, setter, rule.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0, flexShrink: 0 }}>
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 
@@ -116,14 +123,13 @@ export default function GuardrailsTab() {
           <Field label="Guardrail Name"><input value={name} onChange={e => setName(e.target.value)} placeholder="no-pii" /></Field>
           <RuleList rules={inputRules} setter={setInputRules} type="input" />
           <RuleList rules={outputRules} setter={setOutputRules} type="output" />
-          <div className="flex items-center justify-between mt-3 px-2 py-2 rounded-md"
-            style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-            <span className="text-[10px]" style={{ color: 'var(--text2)' }}>Log violations</span>
-            <button onClick={() => setLogViolations(v => !v)}
-              className="w-8 h-4 rounded-full relative transition-colors"
-              style={{ background: logViolations ? 'var(--blue)' : 'var(--border)' }}>
-              <span className="absolute w-3 h-3 rounded-full bg-white top-0.5 transition-all"
-                style={{ left: logViolations ? '17px' : '2px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '8px 10px', borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 11, color: 'var(--text2)' }}>Log violations</span>
+            <button
+              onClick={() => setLogViolations(v => !v)}
+              style={{ width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0, transition: 'background 0.2s', background: logViolations ? 'var(--blue)' : 'var(--border)', padding: 0 }}
+            >
+              <span style={{ position: 'absolute', width: 13, height: 13, borderRadius: '50%', background: '#fff', top: 2.5, left: logViolations ? 16 : 3, transition: 'left 0.2s' }} />
             </button>
           </div>
           {error && <p style={{ fontSize: 11, color: 'var(--red)', marginBottom: 8 }}>{error}</p>}
@@ -146,7 +152,7 @@ export default function GuardrailsTab() {
                 if (editingId === g.id) { cancelEdit(); return }
                 if (!editingId) setExpandedId(expandedId === g.id ? null : g.id)
               }}>
-              <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5"
+              <div className="w-6 h-6 rounded flex items-center justify-center shrink-0 mt-0.5"
                 style={{ background: 'rgba(248,113,113,0.1)' }}>
                 <Shield size={11} color="var(--red)" />
               </div>
@@ -156,7 +162,7 @@ export default function GuardrailsTab() {
                   {(g.input_rules?.length ?? 0)} input · {(g.output_rules?.length ?? 0)} output rules
                 </div>
               </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                 <button onClick={e => { e.stopPropagation(); startEdit(g) }} className="p-1 rounded" style={{ color: 'var(--blue)' }}>
                   <Pencil size={11} />
                 </button>

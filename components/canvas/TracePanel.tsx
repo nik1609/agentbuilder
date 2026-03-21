@@ -56,6 +56,8 @@ const EVENT_DOT: Record<string, string> = {
   error:            'var(--red)',
   guardrail_block:  'var(--red)',
   guardrail_warn:   'var(--orange)',
+  compress_start:   '#f0a030',
+  compress_done:    '#22d79a',
 }
 
 const EVENT_LABEL: Record<string, string> = {
@@ -69,10 +71,12 @@ const EVENT_LABEL: Record<string, string> = {
   error:            'error',
   guardrail_block:  'blocked',
   guardrail_warn:   'warned',
+  compress_start:   'compress →',
+  compress_done:    '← compress',
 }
 
 // Events that carry useful data worth showing
-const HAS_DATA_TYPES = new Set(['llm_call', 'llm_response', 'tool_call', 'tool_result', 'error', 'guardrail_block', 'guardrail_warn'])
+const HAS_DATA_TYPES = new Set(['llm_call', 'llm_response', 'tool_call', 'tool_result', 'error', 'guardrail_block', 'guardrail_warn', 'compress_start', 'compress_done'])
 
 const STATUS_MAP = {
   running:      { label: 'RUNNING',  color: 'var(--blue)',   bg: 'rgba(124,111,240,0.12)', border: 'rgba(124,111,240,0.3)', pulse: true },

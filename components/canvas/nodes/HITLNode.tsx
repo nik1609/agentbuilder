@@ -2,16 +2,18 @@
 import { Handle, Position, NodeProps } from '@xyflow/react'
 import { UserCheck } from 'lucide-react'
 import { NodeData } from '@/types/agent'
+import NodeIdChip from './NodeIdChip'
 
-export default function HITLNode({ data, selected }: NodeProps) {
+export default function HITLNode({ id, data, selected }: NodeProps) {
   const d = data as NodeData
   return (
     <div style={{
       minWidth: 180, borderRadius: 12, overflow: 'hidden', cursor: 'grab',
       background: 'var(--surface)',
-      border: `1px solid ${selected ? '#b080f8' : 'var(--border)'}`,
+      borderStyle: 'solid',
+      borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 3,
+      borderTopColor: selected ? '#b080f8' : 'var(--border)', borderRightColor: selected ? '#b080f8' : 'var(--border)', borderBottomColor: selected ? '#b080f8' : 'var(--border)', borderLeftColor: '#b080f8',
       boxShadow: selected ? '0 0 0 2px rgba(176,128,248,0.3), 0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.3)',
-      borderLeft: '3px solid #b080f8',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px 6px', borderBottom: '1px solid var(--border2)' }}>
         <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(176,128,248,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -27,6 +29,7 @@ export default function HITLNode({ data, selected }: NodeProps) {
           </div>
         )}
       </div>
+      {selected && <NodeIdChip id={id} />}
       <Handle type="target" position={Position.Left} style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #b080f8', left: -6 }} />
       <Handle type="source" position={Position.Right} style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #b080f8', right: -6 }} />
     </div>

@@ -160,3 +160,32 @@ create policy "users_own_keys" on api_keys for all using (auth.uid() = user_id);
 --   ('Gemini 2.0 Flash', 'google', 'gemini-2.0-flash', 0.7, 8192);
 
 -- Use POST /api/seed after signing in to seed sample data for your account.
+
+-- ─── Datatables ───────────────────────────────────────────────────────────────
+drop table if exists datatable_rows cascade;
+drop table if exists datatables cascade;
+
+create table datatables (
+  id          uuid        primary key default gen_random_uuid(),
+  user_id     uuid        references auth.users not null,
+  name        text        not null,
+  description text        not null default '',
+  columns     jsonb       not null default '[]',
+  -- columns schema: [{name: string, type: 'text'|'number'|'boolean'|'date', isPrimaryKey: bool, required: bool}]
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create table datatable_rows (
+  id            uuid        primary key default gen_random_uuid(),
+  datatable_id  uuid        references datatables on delete cascade not null,
+  user_id       uuid        references auth.users not null,
+  data          jsonb       not null default '{}',
+  created_at    timestamptz not null default now()
+);
+
+alter table datatables    enable row level security;
+alter table datatable_rows enable row level security;
+
+create policy "users_own_datatables"     on datatables     for all using (auth.uid() = user_id);
+create policy "users_own_datatable_rows" on datatable_rows for all using (auth.uid() = user_id);

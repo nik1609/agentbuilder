@@ -13,6 +13,8 @@ export interface LLMCallOptions {
   userMessage: string
   temperature?: number
   maxTokens?: number
+  /** Request timeout in ms. Defaults to 60 000. */
+  timeout?: number
 }
 
 export interface LLMResult {
@@ -77,6 +79,7 @@ async function callOpenAICompatible(opts: LLMCallOptions): Promise<LLMResult> {
       temperature: opts.temperature ?? 0.7,
       max_tokens: opts.maxTokens ?? 4096,
     }),
+    signal: AbortSignal.timeout(opts.timeout ?? 60000),
   })
 
   if (!res.ok) {
@@ -116,6 +119,7 @@ async function callAnthropic(opts: LLMCallOptions): Promise<LLMResult> {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(opts.timeout ?? 60000),
   })
 
   if (!res.ok) {
@@ -135,11 +139,15 @@ async function callAnthropic(opts: LLMCallOptions): Promise<LLMResult> {
 // ─── Router ───────────────────────────────────────────────────────────────────
 export async function callLLM(opts: LLMCallOptions): Promise<LLMResult> {
   const provider = opts.provider ?? 'google'
+  const ms = opts.timeout ?? 60000
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`LLM request timed out after ${ms / 1000}s`)), ms)
+  )
   switch (provider) {
     case 'openai-compatible':
-    case 'ollama': return callOpenAICompatible(opts)
-    case 'anthropic': return callAnthropic(opts)
+    case 'ollama': return Promise.race([callOpenAICompatible(opts), timeoutPromise])
+    case 'anthropic': return Promise.race([callAnthropic(opts), timeoutPromise])
     case 'google':
-    default: return callGoogle(opts)
+    default: return Promise.race([callGoogle(opts), timeoutPromise])
   }
 }

@@ -14,7 +14,7 @@ export default function AgentsPage() {
   const [copied, setCopied] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/agents').then(r => r.json()).then(d => {
+    fetch('/api/agents').then(r => r.text()).then(t => { const d = (() => { try { return JSON.parse(t) } catch { return [] } })()
       setAgents(Array.isArray(d) ? d : [])
       setLoading(false)
     })

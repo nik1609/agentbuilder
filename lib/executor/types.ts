@@ -30,6 +30,8 @@ export interface ExecutionContext {
   guardrailMap?: Record<string, GuardrailData>
   nodeOutputs?: Record<string, unknown>
   agentRunsHistory?: AgentRunsHistory
+  datatableImportData?: Record<string, unknown[]>  // datatableId → pre-fetched rows
+  datatableWriter?: (datatableId: string, row: Record<string, unknown>) => Promise<void>
 }
 
 export interface NodeResult {

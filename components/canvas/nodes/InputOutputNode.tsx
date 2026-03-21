@@ -2,8 +2,9 @@
 import { Handle, Position, NodeProps } from '@xyflow/react'
 import { ArrowRight, ArrowLeft } from 'lucide-react'
 import { NodeData } from '@/types/agent'
+import NodeIdChip from './NodeIdChip'
 
-export default function InputOutputNode({ data }: NodeProps) {
+export default function InputOutputNode({ id, data, selected }: NodeProps) {
   const d = data as NodeData
   const isInput = d.nodeType === 'input'
   const color = isInput ? '#22d3ee' : '#6868a0'
@@ -26,6 +27,7 @@ export default function InputOutputNode({ data }: NodeProps) {
       <div style={{ padding: '8px 12px 10px' }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', lineHeight: 1.3 }}>{d.label}</div>
       </div>
+      {selected && <NodeIdChip id={id} />}
       {isInput && (
         <Handle type="source" position={Position.Right} style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, right: -6 }} />
       )}

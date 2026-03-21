@@ -1,4 +1,4 @@
-export type NodeType = 'llm' | 'tool' | 'condition' | 'hitl' | 'input' | 'output'
+export type NodeType = 'llm' | 'tool' | 'condition' | 'hitl' | 'input' | 'output' | 'passthrough'
 
 export interface MemorySource {
   id: string
@@ -21,6 +21,8 @@ export interface NodeData extends Record<string, unknown> {
   // Tool node
   toolName?: string
   toolConfig?: Record<string, unknown>
+  compressOutput?: boolean
+  compressModel?: string
   // Condition node
   condition?: string
   // HITL node
@@ -155,7 +157,7 @@ export interface AgentRun {
 
 export interface TraceEvent {
   ts: number // ms offset from start
-  type: 'node_start' | 'node_done' | 'tool_call' | 'tool_result' | 'llm_call' | 'llm_response' | 'error' | 'hitl_pause' | 'guardrail_block' | 'guardrail_warn'
+  type: 'node_start' | 'node_done' | 'node_output' | 'tool_call' | 'tool_result' | 'llm_call' | 'llm_response' | 'error' | 'hitl_pause' | 'guardrail_block' | 'guardrail_warn' | 'compress_start' | 'compress_done'
   nodeId?: string
   message: string
   data?: unknown

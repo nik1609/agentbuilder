@@ -25,8 +25,8 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    fetch('/api/agents').then(r => r.json()).then(d => {
-      setAgents(Array.isArray(d) ? d : [])
+    fetch('/api/agents').then(r => r.text()).then(t => {
+      try { const d = JSON.parse(t); setAgents(Array.isArray(d) ? d : []) } catch { setAgents([]) }
       setAgentsLoading(false)
     })
   }, [])
@@ -58,21 +58,23 @@ export default function ChatPage() {
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
         }),
       })
-      const data = await res.json()
+      const rawText = await res.text()
+      let data: Record<string, unknown> = {}
+      try { data = JSON.parse(rawText) } catch { data = { error: `Server error: ${res.status}` } }
 
       if (!res.ok || data.status === 'failed') {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.error ?? 'Something went wrong. Please try again.', error: true }])
+        setMessages(prev => [...prev, { role: 'assistant', content: (data.error as string) ?? 'Something went wrong. Please try again.', error: true }])
       } else if (data.status === 'waiting_hitl') {
         const partial = (data.output as Record<string, unknown>)?.partial
         const partialText = typeof partial === 'string' ? partial : JSON.stringify(partial, null, 2)
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: partialText ?? 'Agent paused — waiting for your approval.',
-          hitl: { runId: data.runId, partial },
+          hitl: { runId: String(data.runId ?? ''), partial },
         }])
       } else {
         const output = typeof data.output === 'string' ? data.output : JSON.stringify(data.output, null, 2)
-        setMessages(prev => [...prev, { role: 'assistant', content: output, tokens: data.tokens, latencyMs: data.latencyMs }])
+        setMessages(prev => [...prev, { role: 'assistant', content: output, tokens: typeof data.tokens === 'number' ? data.tokens : undefined, latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : undefined }])
       }
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Network error. Please try again.', error: true }])
@@ -94,12 +96,14 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ feedback: feedback?.trim() || undefined }),
       })
-      const data = await res.json()
+      const rawText2 = await res.text()
+      let data: Record<string, unknown> = {}
+      try { data = JSON.parse(rawText2) } catch { data = { error: `Server error: ${res.status}` } }
       if (!res.ok || data.status === 'failed') {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.error ?? 'Resume failed.', error: true }])
+        setMessages(prev => [...prev, { role: 'assistant', content: (data.error as string) ?? 'Resume failed.', error: true }])
       } else {
         const output = typeof data.output === 'string' ? data.output : JSON.stringify(data.output, null, 2)
-        setMessages(prev => [...prev, { role: 'assistant', content: output, tokens: data.tokens, latencyMs: data.latencyMs }])
+        setMessages(prev => [...prev, { role: 'assistant', content: output, tokens: typeof data.tokens === 'number' ? data.tokens : undefined, latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : undefined }])
       }
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Network error during resume.', error: true }])

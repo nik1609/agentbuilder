@@ -65,16 +65,51 @@ export async function POST(
       if (node.data.nodeType === 'tool' && node.data.toolName) {
         const t = toolMap[node.data.toolName as string]
         if (t) {
+          const inline = node.data.toolConfig as Record<string, unknown> | undefined
+          const dbSchema = (t.input_schema as Record<string, unknown>) ?? {}
+          const inlineSchema = (inline?.input_schema as Record<string, unknown>) ?? {}
           node.data.toolConfig = {
             endpoint: t.endpoint ?? '',
             method: t.method ?? 'POST',
             headers: t.headers ?? {},
             timeout: t.timeout ?? 5000,
-            type: t.type ?? 'http',
+            type: t.type ?? inline?.type ?? 'http',
+            input_schema: { ...inlineSchema, ...dbSchema },
           }
         }
       }
     }
+  }
+
+  // ── 5.5. Pre-fetch datatable import data + build writer callback ──────────
+  const { v4: uuidv4 } = await import('uuid')
+  const datatableImportData: Record<string, unknown[]> = {}
+  if (agent.user_id && schema?.nodes) {
+    for (const node of schema.nodes) {
+      if (node.data.nodeType === 'tool') {
+        const cfg = node.data.toolConfig as Record<string, unknown> | undefined
+        const sch = cfg?.input_schema as Record<string, unknown> | undefined
+        if (cfg?.type === 'datatable' && sch?.mode === 'import') {
+          const dtId = sch.datatable_id as string
+          if (dtId && !datatableImportData[dtId]) {
+            const { data: rows } = await db.from('datatable_rows').select('data').eq('datatable_id', dtId)
+            datatableImportData[dtId] = (rows ?? []).map(r => r.data as unknown)
+          }
+        }
+      }
+    }
+  }
+  const datatableWriter = async (datatableId: string, row: Record<string, unknown>) => {
+    if (!datatableId) throw new Error('Datatable export failed: no datatable_id configured on the tool node.')
+    const { error, data: inserted } = await db.from('datatable_rows').insert({
+      id: uuidv4(),
+      datatable_id: datatableId,
+      user_id: agent.user_id ?? '',
+      data: row,
+      created_at: new Date().toISOString(),
+    }).select('id').single()
+    if (error) throw new Error(`Datatable insert failed [datatable_id=${datatableId}]: ${error.message}`)
+    if (!inserted) throw new Error(`Datatable insert returned no data [datatable_id=${datatableId}]`)
   }
 
   // ── 6. Extract checkpoint info from saved run output ──────────────────────
@@ -94,7 +129,11 @@ export async function POST(
     runId,
     undefined,
     { checkpointNodeId, partialOutput, feedback },
-    modelConfigs
+    modelConfigs,
+    undefined,
+    undefined,
+    datatableImportData,
+    datatableWriter
   )
 
   // ── 8. Update run record ──────────────────────────────────────────────────

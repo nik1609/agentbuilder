@@ -18,7 +18,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${mono.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} ${mono.variable} h-full`} suppressHydrationWarning>
+      <head>
+        {/* Runs before hydration to prevent theme flash */}
+        {/* eslint-disable-next-line @next/next/no-before-interactive-script-component */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('agenthub-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark')}catch(e){}})()` }} />
+      </head>
       <body className="min-h-full bg-[#0a0a12] text-[#e8e6f8] antialiased">{children}</body>
     </html>
   );

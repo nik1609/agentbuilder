@@ -2,16 +2,18 @@
 import { Handle, Position, NodeProps } from '@xyflow/react'
 import { GitBranch } from 'lucide-react'
 import { NodeData } from '@/types/agent'
+import NodeIdChip from './NodeIdChip'
 
-export default function ConditionNode({ data, selected }: NodeProps) {
+export default function ConditionNode({ id, data, selected }: NodeProps) {
   const d = data as NodeData
   return (
     <div style={{
       minWidth: 180, borderRadius: 12, overflow: 'hidden', cursor: 'grab',
       background: 'var(--surface)',
-      border: `1px solid ${selected ? '#f5a020' : 'var(--border)'}`,
+      borderStyle: 'solid',
+      borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 3,
+      borderTopColor: selected ? '#f5a020' : 'var(--border)', borderRightColor: selected ? '#f5a020' : 'var(--border)', borderBottomColor: selected ? '#f5a020' : 'var(--border)', borderLeftColor: '#f5a020',
       boxShadow: selected ? '0 0 0 2px rgba(245,160,32,0.3), 0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.3)',
-      borderLeft: '3px solid #f5a020',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px 6px', borderBottom: '1px solid var(--border2)' }}>
         <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(245,160,32,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -27,6 +29,7 @@ export default function ConditionNode({ data, selected }: NodeProps) {
           </div>
         )}
       </div>
+      {selected && <NodeIdChip id={id} />}
       <Handle type="target" position={Position.Left} style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #f5a020', left: -6 }} />
       <Handle type="source" position={Position.Right} id="true" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #22d79a', right: -6, top: '35%' }} />
       <Handle type="source" position={Position.Right} id="false" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #e85555', right: -6, top: '65%' }} />

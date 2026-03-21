@@ -75,7 +75,22 @@ export async function POST(
     for (const node of schema.nodes) {
       if (node.data.nodeType === 'tool' && node.data.toolName) {
         const t = toolMap[node.data.toolName as string]
-        if (t) node.data.toolConfig = { endpoint: t.endpoint ?? '', method: t.method ?? 'POST', headers: t.headers ?? {}, timeout: t.timeout ?? 5000, type: t.type ?? 'http', input_schema: t.input_schema ?? {} }
+        if (t) {
+          // DB record wins; but merge with inline toolConfig for fields the DB record may lack
+          const inline = node.data.toolConfig as Record<string, unknown> | undefined
+          const dbSchema = (t.input_schema as Record<string, unknown>) ?? {}
+          const inlineSchema = (inline?.input_schema as Record<string, unknown>) ?? {}
+          node.data.toolConfig = {
+            endpoint: t.endpoint ?? '',
+            method: t.method ?? 'POST',
+            headers: t.headers ?? {},
+            timeout: t.timeout ?? 5000,
+            type: t.type ?? inline?.type ?? 'http',
+            // Merge: inline provides fields DB might lack (e.g. mode saved before DB PATCH applied)
+            input_schema: { ...inlineSchema, ...dbSchema },
+          }
+        }
+        // If no DB match, keep existing inline toolConfig from node data (set by canvas save)
       }
     }
   }
@@ -139,6 +154,36 @@ export async function POST(
     }
   }
 
+  // ── 6.5. Pre-fetch datatable import data + build writer callback ──────────
+  const datatableImportData: Record<string, unknown[]> = {}
+  if (effectiveUserId && schema?.nodes) {
+    for (const node of schema.nodes) {
+      if (node.data.nodeType === 'tool') {
+        const cfg = node.data.toolConfig as Record<string, unknown> | undefined
+        const sch = cfg?.input_schema as Record<string, unknown> | undefined
+        if (cfg?.type === 'datatable' && sch?.mode === 'import') {
+          const dtId = sch.datatable_id as string
+          if (dtId && !datatableImportData[dtId]) {
+            const { data: rows } = await db.from('datatable_rows').select('data').eq('datatable_id', dtId)
+            datatableImportData[dtId] = (rows ?? []).map(r => r.data as unknown)
+          }
+        }
+      }
+    }
+  }
+  const datatableWriter = async (datatableId: string, row: Record<string, unknown>) => {
+    if (!datatableId) throw new Error('Datatable export failed: no datatable_id configured on the tool node. Re-open the tool node, select a datatable, and click Save Tool Edits.')
+    const { error, data: inserted } = await db.from('datatable_rows').insert({
+      id: uuidv4(),
+      datatable_id: datatableId,
+      user_id: effectiveUserId ?? '',
+      data: row,
+      created_at: new Date().toISOString(),
+    }).select('id').single()
+    if (error) throw new Error(`Datatable insert failed [datatable_id=${datatableId}]: ${error.message}`)
+    if (!inserted) throw new Error(`Datatable insert returned no data [datatable_id=${datatableId}] — row may not have been written`)
+  }
+
   // ── 7. Parse input ────────────────────────────────────────────────────────
   let input: Record<string, unknown> = {}
   try { input = await req.json() } catch { input = {} }
@@ -168,7 +213,7 @@ export async function POST(
   // ── 10. Execute agent ─────────────────────────────────────────────────────
   let result
   try {
-    result = await executeAgent(schema as never, input, agentId, runId, undefined, undefined, modelConfigs, guardrailMap, agentRunsHistory)
+    result = await executeAgent(schema as never, input, agentId, runId, undefined, undefined, modelConfigs, guardrailMap, agentRunsHistory, datatableImportData, datatableWriter)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     await db.from('agent_runs').update({ status: 'failed', error: msg, latency_ms: Date.now() - startTime, trace: [] }).eq('id', runId)
@@ -203,15 +248,85 @@ export async function GET(
   const { agentId } = await params
   const db = createAdminClient()
 
-  const apiKeyHeader = req.headers.get('X-AgentHub-Key')
-  if (apiKeyHeader && apiKeyHeader !== 'test') {
+  // Auth
+  const sessionUserId = await getUserFromSession()
+  const apiKeyHeader = req.headers.get('X-AgentHub-Key') || req.headers.get('x-agenthub-key')
+  const isTestMode = !apiKeyHeader || apiKeyHeader === 'test'
+  let apiKeyUserId: string | null = null
+
+  if (!sessionUserId && !isTestMode && apiKeyHeader) {
     const keyHash = hashApiKey(apiKeyHeader)
-    const { data } = await db.from('api_keys').select('id').eq('key_hash', keyHash).eq('is_active', true).single()
+    const { data } = await db.from('api_keys').select('id, user_id').eq('key_hash', keyHash).eq('is_active', true).single()
     if (!data) return NextResponse.json({ error: 'Invalid API key' }, { status: 403 })
+    apiKeyUserId = (data as { id: string; user_id: string }).user_id ?? null
+  }
+  const resolvedUserId = sessionUserId ?? apiKeyUserId
+
+  const agentQuery = db.from('agents').select('*').eq('id', agentId)
+  if (resolvedUserId) agentQuery.eq('user_id', resolvedUserId)
+  const { data: agent } = await agentQuery.single()
+  if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+
+  const effectiveUserId = resolvedUserId ?? agent.user_id
+
+  // Load model configs
+  const modelConfigs: Record<string, { provider: 'google' | 'openai-compatible' | 'anthropic' | 'ollama'; modelId: string; apiKey?: string; baseUrl?: string }> = {}
+  if (effectiveUserId) {
+    const { data: modelRows } = await db.from('models').select('*').eq('user_id', effectiveUserId)
+    for (const m of (modelRows ?? [])) {
+      modelConfigs[m.name] = { provider: m.provider ?? 'google', modelId: m.model_id ?? m.name, apiKey: m.api_key ?? undefined, baseUrl: m.base_url ?? undefined }
+    }
   }
 
-  const { data: agent } = await db.from('agents').select('*').eq('id', agentId).single()
-  if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+  // Inject tool configs
+  const schema = agent.schema as { nodes: Array<{ data: Record<string, unknown> }>; edges: unknown[] }
+  if (effectiveUserId && schema?.nodes) {
+    const { data: toolRows } = await db.from('tools').select('*').eq('user_id', effectiveUserId)
+    const toolMap: Record<string, Record<string, unknown>> = {}
+    for (const t of (toolRows ?? [])) toolMap[t.name] = t
+    for (const node of schema.nodes) {
+      if (node.data.nodeType === 'tool' && node.data.toolName) {
+        const t = toolMap[node.data.toolName as string]
+        if (t) {
+          const inline = node.data.toolConfig as Record<string, unknown> | undefined
+          const dbSchema = (t.input_schema as Record<string, unknown>) ?? {}
+          const inlineSchema = (inline?.input_schema as Record<string, unknown>) ?? {}
+          node.data.toolConfig = {
+            endpoint: t.endpoint ?? '',
+            method: t.method ?? 'POST',
+            headers: t.headers ?? {},
+            timeout: t.timeout ?? 5000,
+            type: t.type ?? inline?.type ?? 'http',
+            input_schema: { ...inlineSchema, ...dbSchema },
+          }
+        }
+      }
+    }
+  }
+
+  // Pre-fetch datatable import data for SSE
+  const sseDatatableImportData: Record<string, unknown[]> = {}
+  if (effectiveUserId && schema?.nodes) {
+    for (const node of schema.nodes) {
+      if (node.data.nodeType === 'tool') {
+        const cfg = node.data.toolConfig as Record<string, unknown> | undefined
+        const sch = cfg?.input_schema as Record<string, unknown> | undefined
+        if (cfg?.type === 'datatable' && sch?.mode === 'import') {
+          const dtId = sch.datatable_id as string
+          if (dtId && !sseDatatableImportData[dtId]) {
+            const { data: rows } = await db.from('datatable_rows').select('data').eq('datatable_id', dtId)
+            sseDatatableImportData[dtId] = (rows ?? []).map(r => r.data as unknown)
+          }
+        }
+      }
+    }
+  }
+  const sseDatatableWriter = async (datatableId: string, row: Record<string, unknown>) => {
+    if (!datatableId) throw new Error('Datatable export failed: no datatable_id configured on the tool node.')
+    const { error, data: inserted } = await db.from('datatable_rows').insert({ id: uuidv4(), datatable_id: datatableId, user_id: effectiveUserId ?? '', data: row, created_at: new Date().toISOString() }).select('id').single()
+    if (error) throw new Error(`Datatable insert failed [datatable_id=${datatableId}]: ${error.message}`)
+    if (!inserted) throw new Error(`Datatable insert returned no data [datatable_id=${datatableId}]`)
+  }
 
   const url = new URL(req.url)
   const message = url.searchParams.get('message') ?? ''
@@ -220,20 +335,41 @@ export async function GET(
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (data: object) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+      const send = (data: object) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch { /* client disconnected */ }
+      }
       send({ type: 'start', runId, agentId, agentName: agent.name })
+
+      // Create run record up front so resume can find it
+      await db.from('agent_runs').insert({
+        id: runId, agent_id: agentId, agent_name: agent.name,
+        api_key_prefix: isTestMode ? 'test' : 'stream',
+        input: { message }, status: 'running', trace: [],
+        created_at: new Date().toISOString(),
+        user_id: effectiveUserId ?? null,
+      })
+
       try {
-        const result = await executeAgent(agent.schema, { message }, agentId, runId, (event) => send({ type: 'trace', event }))
-        await db.from('agent_runs').insert({
-          id: runId, agent_id: agentId, agent_name: agent.name,
-          api_key_prefix: 'stream', input: { message },
-          output: result.output as object, status: result.status,
+        const result = await executeAgent(schema as never, { message }, agentId, runId, (event) => send({ type: 'trace', event }), undefined, modelConfigs, undefined, undefined, sseDatatableImportData, sseDatatableWriter)
+
+        await db.from('agent_runs').update({
+          output: result.output as object ?? null, status: result.status,
           tokens: result.tokens, latency_ms: result.latencyMs,
-          trace: result.trace, created_at: new Date().toISOString(),
-        })
-        send({ type: 'done', output: result.output, tokens: result.tokens, latencyMs: result.latencyMs, status: result.status })
+          error: result.error ?? null, trace: result.trace,
+        }).eq('id', runId)
+
+        // For HITL: send a dedicated pause event so the client knows to call /resume
+        if (result.status === 'waiting_hitl') {
+          const hitlOutput = result.output as { checkpoint?: string; partial?: unknown } | null
+          send({ type: 'hitl_pause', runId, checkpoint: hitlOutput?.checkpoint, partial: hitlOutput?.partial,
+            message: 'Agent paused — POST to /api/runs/' + runId + '/resume to continue' })
+        }
+
+        send({ type: 'done', runId, output: result.output, tokens: result.tokens, latencyMs: result.latencyMs, status: result.status, error: result.error ?? null })
       } catch (err) {
-        send({ type: 'error', message: err instanceof Error ? err.message : String(err) })
+        const msg = err instanceof Error ? err.message : String(err)
+        await db.from('agent_runs').update({ status: 'failed', error: msg }).eq('id', runId)
+        send({ type: 'error', message: msg })
       }
       controller.close()
     },

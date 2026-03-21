@@ -7,9 +7,9 @@
   --surface2: #10102a;
   --border: #1a1a35;
   --border2: #14142e;
-  --text: #ededff;
-  --text2: #6868a0;
-  --text3: #30305a;
+  --text: #ffffff;
+  --text2: #c8c8e8;
+  --text3: #8888b0;
   --blue: #7c6ff0;
   --green: #22d79a;
   --orange: #f5a020;
@@ -93,4 +93,8 @@ body {
 .field-inputs > select {
   appearance: none;
   cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
 }

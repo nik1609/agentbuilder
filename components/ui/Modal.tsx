@@ -33,7 +33,7 @@ export default function Modal({ open, onClose, title, children, width = 480 }: M
         className="relative rounded-xl shadow-2xl overflow-hidden"
         style={{ width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 64px)', background: 'var(--surface)', border: '1px solid var(--border)' }}
       >
-        <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex items-center justify-between border-b" style={{ padding: '14px 24px', borderColor: 'var(--border)' }}>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{title}</h2>
           <button onClick={onClose} className="p-1 rounded-md" style={{ color: 'var(--text3)' }}>
             <X size={15} />
@@ -55,17 +55,16 @@ export function ConfirmModal({
 }) {
   return (
     <Modal open={open} onClose={onClose} title={title} width={400}>
-      <div className="p-5">
-        <p className="text-sm mb-5" style={{ color: 'var(--text2)' }}>{message}</p>
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--surface2)' }}>
+      <div style={{ padding: '20px 24px 24px' }}>
+        <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 24 }}>{message}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose}
+            style={{ padding: '8px 18px', borderRadius: 8, fontSize: 13, border: '1px solid var(--border)', color: 'var(--text2)', background: 'var(--surface2)', cursor: 'pointer' }}>
             Cancel
           </button>
           <button
             onClick={() => { onConfirm(); onClose() }}
-            className="px-4 py-2 rounded-lg text-sm font-semibold"
-            style={{ background: danger ? 'var(--red)' : 'var(--blue)', color: danger ? 'white' : '#080810' }}
+            style={{ padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', background: danger ? 'var(--red)' : '#7c6ff0', color: 'white', cursor: 'pointer' }}
           >
             {danger ? 'Delete' : 'Confirm'}
           </button>

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, use } from 'react'
 import dynamic from 'next/dynamic'
-import { Save, Play, Copy, CheckCircle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck, ThumbsUp, Send, X, Download } from 'lucide-react'
+import { Save, Play, Copy, CheckCircle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck, ThumbsUp, Send, X, Download, Upload } from 'lucide-react'
 import TracePanel from '@/components/canvas/TracePanel'
 import ConfigStudio from '@/components/config/ConfigStudio'
 import { AgentNode, AgentEdge, TraceEvent } from '@/types/agent'
@@ -39,12 +39,15 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
   const [hitlResuming, setHitlResuming] = useState(false)
   const [hitlCollapsed, setHitlCollapsed] = useState(false)
   const [resultDismissed, setResultDismissed] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importJson, setImportJson] = useState('')
+  const [importError, setImportError] = useState('')
+  const [canvasKey, setCanvasKey] = useState(0)
 
   useEffect(() => {
     if (!isNew) {
-      fetch(`/api/agents/${agentId}`).then(r => r.json()).then(data => {
-        if (data?.name) setAgentName(data.name)
-        if (data?.schema) setSchema(data.schema)
+      fetch(`/api/agents/${agentId}`).then(r => r.text()).then(t => {
+        try { const data = JSON.parse(t); if (data?.name) setAgentName(data.name); if (data?.schema) setSchema(data.schema) } catch { /* ignore */ }
         setSchemaReady(true)
       })
     }
@@ -62,7 +65,8 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: agentName.trim(), schema }),
       })
-      const data = await res.json()
+      const t = await res.text()
+      const data = (() => { try { return JSON.parse(t) } catch { return {} } })()
       if (!res.ok) throw new Error(data.error ?? 'Failed to save')
       if (!savedAgentId) setSavedAgentId(data.id)
       setSaveStatus('saved')
@@ -104,7 +108,8 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
       },
       body: JSON.stringify({ message: testMessage }),
     })
-    const data = await res.json()
+    const raw = await res.text()
+    const data = (() => { try { return JSON.parse(raw) } catch { return { status: 'failed', error: `Server error ${res.status}` } } })()
     setRunResult(data)
     setTrace(data.trace ?? [])
     setRunStatus(data.status ?? (res.ok ? 'completed' : 'failed'))
@@ -119,7 +124,8 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ feedback: feedback?.trim() || undefined }),
     })
-    const data = await res.json()
+    const raw2 = await res.text()
+    const data = (() => { try { return JSON.parse(raw2) } catch { return { status: 'failed', error: `Server error ${res.status}` } } })()
     setRunResult(data)
     setTrace(prev => [...prev, ...(data.trace ?? [])])
     setRunStatus(data.status ?? (res.ok ? 'completed' : 'failed'))
@@ -313,6 +319,23 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
     URL.revokeObjectURL(url)
   }
 
+  const loadImport = () => {
+    setImportError('')
+    try {
+      const parsed = JSON.parse(importJson)
+      const nodes = parsed.nodes ?? parsed.schema?.nodes
+      const edges = parsed.edges ?? parsed.schema?.edges
+      if (!Array.isArray(nodes)) throw new Error('No "nodes" array found')
+      setSchema({ nodes, edges: Array.isArray(edges) ? edges : [] })
+      if (parsed.name && typeof parsed.name === 'string') setAgentName(parsed.name)
+      setCanvasKey(k => k + 1)
+      setImportOpen(false)
+      setImportJson('')
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Invalid JSON')
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
       {/* Top bar */}
@@ -365,6 +388,13 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
               Postman
             </button>
           )}
+          <button onClick={() => setImportOpen(true)}
+            className="hidden sm:flex items-center gap-1.5"
+            title="Import agent schema from JSON"
+            style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text2)', background: 'var(--surface2)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>
+            <Upload size={11} />
+            Import
+          </button>
           <button onClick={saveAgent} disabled={saving}
             className="flex items-center gap-1.5"
             style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text2)', background: 'var(--surface2)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
@@ -415,10 +445,11 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
           <div className="flex-1 relative overflow-hidden">
             {schemaReady && (
               <AgentCanvas
-                key={savedAgentId ?? 'new'}
+                key={`${savedAgentId ?? 'new'}-${canvasKey}`}
                 initialNodes={schema.nodes}
                 initialEdges={schema.edges}
                 onSchemaChange={setSchema}
+                onAfterToolSave={saveAgent}
               />
             )}
             {!schemaReady && (
@@ -591,6 +622,56 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
           <TracePanel trace={trace} status={runStatus} tokens={runResult?.tokens} latencyMs={runResult?.latencyMs} />
         </div>
       </div>
+
+      {/* Import JSON Modal */}
+      {importOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setImportOpen(false)}>
+          <div style={{
+            width: 520, borderRadius: 16,
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Import Agent Schema</span>
+              <button onClick={() => setImportOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)' }}>
+                <X size={16} />
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>
+              Paste a JSON object with a <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 4px', borderRadius: 3 }}>nodes</code> array (and optionally <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 4px', borderRadius: 3 }}>edges</code> and <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 4px', borderRadius: 3 }}>name</code>).
+            </p>
+            <textarea
+              value={importJson}
+              onChange={e => { setImportJson(e.target.value); setImportError('') }}
+              placeholder={'{\n  "name": "My Agent",\n  "nodes": [...],\n  "edges": [...]\n}'}
+              rows={12}
+              style={{
+                width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 11,
+                fontFamily: 'monospace', lineHeight: 1.6, resize: 'vertical',
+                background: 'var(--bg)', border: `1px solid ${importError ? 'var(--red)' : 'var(--border)'}`,
+                color: 'var(--text)', outline: 'none',
+              }}
+            />
+            {importError && <p style={{ fontSize: 11, color: 'var(--red)', marginTop: 6 }}>{importError}</p>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button onClick={() => setImportOpen(false)} style={{
+                padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)',
+                background: 'var(--surface2)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              }}>Cancel</button>
+              <button onClick={loadImport} disabled={!importJson.trim()} style={{
+                padding: '8px 20px', borderRadius: 8, border: 'none',
+                background: importJson.trim() ? 'var(--blue)' : 'var(--surface2)',
+                color: importJson.trim() ? '#fff' : 'var(--text3)',
+                fontSize: 13, fontWeight: 600, cursor: importJson.trim() ? 'pointer' : 'not-allowed',
+              }}>Load Schema</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

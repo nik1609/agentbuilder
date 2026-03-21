@@ -18,7 +18,7 @@ export default function ApiKeysPage() {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    fetch('/api/keys').then(r => r.json()).then(d => {
+    fetch('/api/keys').then(r => r.text()).then(t => { const d = (() => { try { return JSON.parse(t) } catch { return [] } })()
       setKeys(Array.isArray(d) ? d : [])
       setLoading(false)
     })
@@ -32,7 +32,7 @@ export default function ApiKeysPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newKeyName }),
     })
-    const data = await res.json()
+    const data = await res.text().then(t => { try { return JSON.parse(t) } catch { return {} } })
     setNewKey(data.key)
     setKeys(k => [{ ...data, key_prefix: data.keyPrefix, is_active: true, total_calls: 0, created_at: new Date().toISOString() }, ...k])
     setNewKeyName('')

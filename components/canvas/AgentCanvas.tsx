@@ -11,6 +11,7 @@ import ToolNode from './nodes/ToolNode'
 import ConditionNode from './nodes/ConditionNode'
 import HITLNode from './nodes/HITLNode'
 import InputOutputNode from './nodes/InputOutputNode'
+import PassthroughNode from './nodes/PassthroughNode'
 import NodeConfigPanel from './NodeConfigPanel'
 import { NodeData, AgentNode, AgentEdge } from '@/types/agent'
 import { v4 as uuidv4 } from 'uuid'
@@ -22,6 +23,7 @@ const nodeTypes = {
   hitl: HITLNode,
   input: InputOutputNode,
   output: InputOutputNode,
+  passthrough: PassthroughNode,
 }
 
 const DEFAULT_EDGE_STYLE = {
@@ -40,6 +42,7 @@ interface AgentCanvasProps {
   initialEdges?: AgentEdge[]
   onSchemaChange?: (schema: { nodes: AgentNode[]; edges: AgentEdge[] }) => void
   onNodeSelect?: (id: string | null, data: NodeData | null) => void
+  onAfterToolSave?: () => void
 }
 
 export default function AgentCanvas({
@@ -47,6 +50,7 @@ export default function AgentCanvas({
   initialEdges,
   onSchemaChange,
   onNodeSelect,
+  onAfterToolSave,
 }: AgentCanvasProps) {
   const initNodes = initialNodes && initialNodes.length > 0
     ? (initialNodes as unknown as Node[])
@@ -99,9 +103,9 @@ export default function AgentCanvas({
     })
   }, [setEdges, scheduleSync, nodes])
 
-  const addNode = useCallback((type: 'llm' | 'tool' | 'condition' | 'hitl') => {
+  const addNode = useCallback((type: 'llm' | 'tool' | 'condition' | 'hitl' | 'passthrough') => {
     const labels: Record<string, string> = {
-      llm: 'LLM Call', tool: 'Tool Call', condition: 'Condition', hitl: 'HITL Review',
+      passthrough: 'I/O Node', llm: 'LLM Call', tool: 'Tool Call', condition: 'Condition', hitl: 'HITL Review',
     }
     const newNode: Node = {
       id: uuidv4(),
@@ -142,6 +146,7 @@ export default function AgentCanvas({
         }} onMouseDown={e => e.stopPropagation()}>
           <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.06em', marginRight: 4 }}>ADD</span>
           {[
+            { type: 'passthrough' as const, label: 'I/O', color: '#64b5f6', bg: 'rgba(100,181,246,0.12)' },
             { type: 'llm' as const, label: 'LLM', color: '#7c6ff0', bg: 'rgba(124,111,240,0.12)' },
             { type: 'tool' as const, label: 'Tool', color: '#22d79a', bg: 'rgba(34,215,154,0.12)' },
             { type: 'condition' as const, label: 'Cond', color: '#f5a020', bg: 'rgba(245,160,32,0.12)' },
@@ -211,6 +216,7 @@ export default function AgentCanvas({
           allNodes={nodes.map(n => ({ id: n.id, data: { label: String(n.data.label ?? ''), nodeType: String(n.data.nodeType ?? '') } }))}
           onUpdate={(data) => updateNodeData(selectedNodeId, data)}
           onClose={() => setSelectedNodeId(null)}
+          onAfterToolSave={onAfterToolSave}
         />
       )}
     </div>

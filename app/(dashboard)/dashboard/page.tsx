@@ -18,9 +18,10 @@ export default function DashboardPage() {
   const [seedDone, setSeedDone] = useState(false)
   const [seedError, setSeedError] = useState('')
 
+  const safeJson = (r: Response) => r.text().then(t => { try { return JSON.parse(t) } catch { return [] } })
   const loadData = () => Promise.all([
-    fetch('/api/agents').then(r => r.json()),
-    fetch('/api/runs').then(r => r.json()),
+    fetch('/api/agents').then(safeJson),
+    fetch('/api/runs').then(safeJson),
   ]).then(([a, r]) => {
     setAgents(Array.isArray(a) ? a : [])
     setRuns(Array.isArray(r) ? r : [])
@@ -34,7 +35,7 @@ export default function DashboardPage() {
     setSeedError('')
     try {
       const res = await fetch('/api/seed', { method: 'POST' })
-      const data = await res.json()
+      const data = await res.text().then(t => { try { return JSON.parse(t) } catch { return {} } })
       if (!res.ok) {
         setSeedError(data.error ?? `Seed failed (${res.status})`)
         setSeeding(false)

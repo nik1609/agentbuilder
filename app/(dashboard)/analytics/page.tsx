@@ -12,7 +12,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/runs').then(r => r.json()).then(d => {
+    fetch('/api/runs').then(r => r.text()).then(t => { const d = (() => { try { return JSON.parse(t) } catch { return [] } })()
       setRuns(Array.isArray(d) ? d : [])
       setLoading(false)
     })

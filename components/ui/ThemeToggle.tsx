@@ -3,13 +3,10 @@ import { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
 
 export default function ThemeToggle() {
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState<boolean | null>(null)
 
   useEffect(() => {
-    const saved = localStorage.getItem('agenthub-theme')
-    const isDark = saved !== 'light'
-    setDark(isDark)
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
+    setDark(localStorage.getItem('agenthub-theme') !== 'light')
   }, [])
 
   const toggle = () => {
@@ -18,6 +15,8 @@ export default function ThemeToggle() {
     localStorage.setItem('agenthub-theme', next ? 'dark' : 'light')
     document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light')
   }
+
+  if (dark === null) return null
 
   return (
     <button
