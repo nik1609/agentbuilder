@@ -1,10 +1,12 @@
 /**
  * DAG Executor — traverses the agent's node graph and executes each node.
  * Supports: LLM nodes, Tool nodes, Condition nodes, HITL nodes.
+ * Guardrails: per LLM node, checked before (block) and after (warn) each LLM call.
+ * Memory: per LLM node, multiple sources (agent_runs history + upstream node outputs).
  */
-import { AgentSchema, AgentNode, AgentEdge, TraceEvent } from '@/types/agent'
+import { AgentSchema, AgentNode, AgentEdge, TraceEvent, MemorySource } from '@/types/agent'
 import { callLLM } from '@/lib/llm'
-import { ExecutionContext, ExecutionResult, ModelRunConfig, NodeResult } from './types'
+import { ExecutionContext, ExecutionResult, ModelRunConfig, NodeResult, GuardrailData, AgentRunsHistory } from './types'
 
 // ─── Topological sort ────────────────────────────────────────────────────────
 function topologicalSort(nodes: AgentNode[], edges: AgentEdge[]): AgentNode[] {
@@ -35,16 +37,47 @@ function topologicalSort(nodes: AgentNode[], edges: AgentEdge[]): AgentNode[] {
   return result
 }
 
+// ─── Build memory context string for an LLM node ─────────────────────────────
+function buildMemoryContext(
+  memorySources: MemorySource[],
+  ctx: ExecutionContext
+): string {
+  if (!memorySources.length) return ''
+  const parts: string[] = []
+
+  for (const src of memorySources) {
+    if (src.type === 'agent_runs' && src.memoryConfigId) {
+      const history = ctx.agentRunsHistory?.[src.memoryConfigId]
+      if (history) parts.push(`[Past Conversations]\n${history}`)
+    } else if (src.type === 'node_output' && src.nodeId) {
+      const output = ctx.nodeOutputs?.[src.nodeId]
+      if (output !== undefined) {
+        const label = src.nodeLabel ?? src.nodeId
+        const text = typeof output === 'string' ? output : JSON.stringify(output)
+        parts.push(`[${label} Output]\n${text}`)
+      }
+    }
+  }
+
+  return parts.length ? `=== Memory Context ===\n${parts.join('\n\n')}\n=== Current Input ===\n` : ''
+}
+
+// ─── Check guardrail rules ────────────────────────────────────────────────────
+function checkRules(rules: { text: string }[], text: string): string | null {
+  const lower = text.toLowerCase()
+  for (const rule of rules) {
+    const keyword = rule.text.toLowerCase()
+    if (keyword && lower.includes(keyword)) return rule.text
+  }
+  return null
+}
+
 // ─── Individual node executors ───────────────────────────────────────────────
 async function executeLLMNode(
   node: AgentNode,
-  ctx: ExecutionContext
+  ctx: ExecutionContext,
+  userMessage: string
 ): Promise<NodeResult> {
-  const userMessage = typeof ctx.variables.__last_output === 'string'
-    ? ctx.variables.__last_output
-    : JSON.stringify(ctx.variables.__last_output ?? ctx.input)
-
-  // Look up model config by node.data.model name
   const modelKey = node.data.model as string | undefined
   const cfg = modelKey ? ctx.modelConfigs?.[modelKey] : undefined
 
@@ -68,12 +101,10 @@ async function executeToolNode(
 ): Promise<NodeResult> {
   const toolCfg = node.data.toolConfig as Record<string, unknown> | undefined
   const endpoint = toolCfg?.endpoint as string | undefined
-
   const toolType = (toolCfg?.type as string) ?? 'http'
 
-  // ── Inline JS function ───────────────────────────────────────────────────
   if (toolType === 'function') {
-    const code = endpoint // stored in endpoint field for function type
+    const code = endpoint
     if (!code) return { output: `[Function tool ${node.data.toolName} has no code]` }
     try {
       // eslint-disable-next-line no-new-func
@@ -85,10 +116,7 @@ async function executeToolNode(
     }
   }
 
-  // ── HTTP endpoint ─────────────────────────────────────────────────────────
-  if (!endpoint) {
-    return { output: `[Tool ${node.data.toolName} skipped — no endpoint configured]` }
-  }
+  if (!endpoint) return { output: `[Tool ${node.data.toolName} skipped — no endpoint configured]` }
 
   const body = {
     input: ctx.variables.__last_output ?? ctx.input,
@@ -97,7 +125,7 @@ async function executeToolNode(
 
   const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(toolCfg?.headers as Record<string,string> ?? {}) },
+    headers: { 'Content-Type': 'application/json', ...(toolCfg?.headers as Record<string, string> ?? {}) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout((toolCfg?.timeout as number) ?? 5000),
   })
@@ -115,7 +143,6 @@ async function executeConditionNode(
   const condition = node.data.condition ?? 'true'
   const lastOutput = ctx.variables.__last_output
 
-  // Simple condition evaluation via LLM
   const { text } = await callLLM({
     provider: 'google',
     systemPrompt: 'You evaluate conditions. Reply with ONLY "true" or "false".',
@@ -137,7 +164,7 @@ async function executeConditionNode(
 export interface ResumeOptions {
   checkpointNodeId: string
   partialOutput: unknown
-  feedback?: string   // reviewer comment; undefined = clean approve
+  feedback?: string
 }
 
 export async function executeAgent(
@@ -147,13 +174,14 @@ export async function executeAgent(
   runId: string,
   onTrace?: (e: TraceEvent) => void,
   resume?: ResumeOptions,
-  modelConfigs?: Record<string, ModelRunConfig>
+  modelConfigs?: Record<string, ModelRunConfig>,
+  guardrailMap?: Record<string, GuardrailData>,
+  agentRunsHistory?: AgentRunsHistory
 ): Promise<ExecutionResult> {
   const startTime = Date.now()
   const trace: TraceEvent[] = []
   let totalTokens = 0
 
-  // When resuming, seed __last_output with what the reviewer saw (+ their feedback if any)
   const seedOutput = resume
     ? resume.feedback
       ? `Reviewer approved with notes: "${resume.feedback}"\n\nPrevious context:\n${JSON.stringify(resume.partialOutput)}`
@@ -163,7 +191,11 @@ export async function executeAgent(
   const ctx: ExecutionContext = {
     agentId, runId, input,
     variables: { __last_output: seedOutput },
-    trace, tokens: 0, startTime, onTrace, modelConfigs,
+    trace, tokens: 0, startTime, onTrace,
+    modelConfigs,
+    guardrailMap,
+    nodeOutputs: {},
+    agentRunsHistory,
   }
 
   const emit = (event: Omit<TraceEvent, 'ts'>) => {
@@ -179,18 +211,15 @@ export async function executeAgent(
       (n) => n.data.nodeType !== 'input' && n.data.nodeType !== 'output'
     )
 
-    // When resuming, skip all nodes up to and including the HITL checkpoint
     let skipUntilAfter: string | null = resume?.checkpointNodeId ?? null
     let conditionSkipTo: string | null = null
 
     for (const node of executableNodes) {
-      // Resume mode: skip nodes before (and including) the checkpoint
       if (skipUntilAfter) {
         if (node.id === skipUntilAfter) { skipUntilAfter = null }
         continue
       }
 
-      // Skip nodes that were branched past
       if (conditionSkipTo && node.id !== conditionSkipTo) continue
       if (conditionSkipTo === node.id) conditionSkipTo = null
 
@@ -200,14 +229,41 @@ export async function executeAgent(
 
       switch (node.data.nodeType) {
         case 'llm': {
-          const llmInput = typeof ctx.variables.__last_output === 'string'
+          const rawInput = typeof ctx.variables.__last_output === 'string'
             ? ctx.variables.__last_output
             : JSON.stringify(ctx.variables.__last_output ?? ctx.input)
+
+          // Build memory context
+          const memorySources = (node.data.memorySources as MemorySource[] | undefined) ?? []
+          const memoryPrefix = buildMemoryContext(memorySources, ctx)
+          const userMessage = memoryPrefix + rawInput
+
           const modelKey2 = node.data.model as string | undefined
           const cfg2 = modelKey2 ? ctx.modelConfigs?.[modelKey2] : undefined
-          emit({ type: 'llm_call', nodeId: node.id, message: `Calling ${cfg2?.modelId ?? modelKey2 ?? 'gemini-2.5-flash'}`, data: { input: llmInput, model: cfg2?.modelId ?? modelKey2 ?? 'gemini-2.5-flash', systemPrompt: node.data.systemPrompt } })
-          result = await executeLLMNode(node, ctx)
+
+          // Check guardrail input rules
+          const guardrailId = node.data.guardrailId as string | undefined
+          const guardrail = guardrailId ? ctx.guardrailMap?.[guardrailId] : undefined
+          if (guardrail) {
+            const violated = checkRules(guardrail.inputRules, userMessage)
+            if (violated) {
+              emit({ type: 'guardrail_block', nodeId: node.id, message: `Guardrail blocked: "${violated}"`, data: { rule: violated, input: userMessage.slice(0, 200) } })
+              throw new Error(`Guardrail blocked input: rule "${violated}" was violated.`)
+            }
+          }
+
+          emit({ type: 'llm_call', nodeId: node.id, message: `Calling ${cfg2?.modelId ?? modelKey2 ?? 'gemini-2.5-flash'}`, data: { input: userMessage, model: cfg2?.modelId ?? modelKey2 ?? 'gemini-2.5-flash', systemPrompt: node.data.systemPrompt } })
+          result = await executeLLMNode(node, ctx, userMessage)
           emit({ type: 'llm_response', nodeId: node.id, message: `LLM response (${result.tokens ?? 0} tokens)`, data: { output: result.output, tokens: result.tokens } })
+
+          // Check guardrail output rules
+          if (guardrail && result.output) {
+            const outputText = typeof result.output === 'string' ? result.output : JSON.stringify(result.output)
+            const violated = checkRules(guardrail.outputRules, outputText)
+            if (violated) {
+              emit({ type: 'guardrail_warn', nodeId: node.id, message: `Guardrail warning: output matched "${violated}"`, data: { rule: violated, output: outputText.slice(0, 200) } })
+            }
+          }
           break
         }
         case 'tool': {
@@ -240,6 +296,8 @@ export async function executeAgent(
       if (result.error) throw new Error(result.error)
 
       ctx.variables.__last_output = result.output
+      // Track output for memory sources
+      if (ctx.nodeOutputs) ctx.nodeOutputs[node.id] = result.output
       totalTokens += result.tokens ?? 0
 
       emit({ type: 'node_done', nodeId: node.id, message: `${node.data.label} completed` })

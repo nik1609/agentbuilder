@@ -9,6 +9,14 @@ export interface ModelRunConfig {
   maxTokens?: number
 }
 
+export interface GuardrailData {
+  inputRules: { text: string }[]
+  outputRules: { text: string }[]
+}
+
+// agentRunsHistory: memoryConfigId → formatted history string
+export type AgentRunsHistory = Record<string, string>
+
 export interface ExecutionContext {
   agentId: string
   runId: string
@@ -19,6 +27,9 @@ export interface ExecutionContext {
   startTime: number
   onTrace?: (event: TraceEvent) => void
   modelConfigs?: Record<string, ModelRunConfig>
+  guardrailMap?: Record<string, GuardrailData>
+  nodeOutputs?: Record<string, unknown>
+  agentRunsHistory?: AgentRunsHistory
 }
 
 export interface NodeResult {

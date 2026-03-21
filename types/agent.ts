@@ -1,5 +1,13 @@
 export type NodeType = 'llm' | 'tool' | 'condition' | 'hitl' | 'input' | 'output'
 
+export interface MemorySource {
+  id: string
+  type: 'agent_runs' | 'node_output'
+  memoryConfigId?: string  // used when type === 'agent_runs'
+  nodeId?: string          // used when type === 'node_output'
+  nodeLabel?: string       // display label for node_output sources
+}
+
 export interface NodeData extends Record<string, unknown> {
   label: string
   nodeType: NodeType
@@ -8,6 +16,8 @@ export interface NodeData extends Record<string, unknown> {
   systemPrompt?: string
   temperature?: number
   maxTokens?: number
+  guardrailId?: string
+  memorySources?: MemorySource[]
   // Tool node
   toolName?: string
   toolConfig?: Record<string, unknown>
@@ -145,7 +155,7 @@ export interface AgentRun {
 
 export interface TraceEvent {
   ts: number // ms offset from start
-  type: 'node_start' | 'node_done' | 'tool_call' | 'tool_result' | 'llm_call' | 'llm_response' | 'error' | 'hitl_pause'
+  type: 'node_start' | 'node_done' | 'tool_call' | 'tool_result' | 'llm_call' | 'llm_response' | 'error' | 'hitl_pause' | 'guardrail_block' | 'guardrail_warn'
   nodeId?: string
   message: string
   data?: unknown

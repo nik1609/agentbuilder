@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bot, LayoutDashboard, KeyRound, BarChart3, Zap, BookOpen, LogOut, ChevronLeft, ChevronRight, Brain } from 'lucide-react'
+import { Bot, LayoutDashboard, KeyRound, BarChart3, Zap, BookOpen, LogOut, ChevronLeft, ChevronRight, Brain, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 import ThemeToggle from '@/components/ui/ThemeToggle'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
@@ -9,6 +9,7 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/agents', label: 'Agents', icon: Bot },
+  { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/models', label: 'Models', icon: Brain },
   { href: '/api-keys', label: 'API Keys', icon: KeyRound },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },

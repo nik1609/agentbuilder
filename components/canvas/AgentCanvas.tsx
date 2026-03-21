@@ -208,6 +208,7 @@ export default function AgentCanvas({
           key={selectedNodeId}
           nodeId={selectedNodeId}
           nodeData={selectedNodeData}
+          allNodes={nodes.map(n => ({ id: n.id, data: { label: String(n.data.label ?? ''), nodeType: String(n.data.nodeType ?? '') } }))}
           onUpdate={(data) => updateNodeData(selectedNodeId, data)}
           onClose={() => setSelectedNodeId(null)}
         />

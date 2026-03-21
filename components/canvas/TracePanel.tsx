@@ -46,29 +46,33 @@ const TYPE_COLORS: Record<TimelineBar['type'], { bar: string; bg: string; label:
 }
 
 const EVENT_DOT: Record<string, string> = {
-  node_start:   'var(--text3)',
-  node_done:    'var(--green)',
-  llm_call:     'var(--blue)',
-  llm_response: '#b080f8',
-  tool_call:    'var(--cyan)',
-  tool_result:  'var(--green)',
-  hitl_pause:   'var(--orange)',
-  error:        'var(--red)',
+  node_start:       'var(--text3)',
+  node_done:        'var(--green)',
+  llm_call:         'var(--blue)',
+  llm_response:     '#b080f8',
+  tool_call:        'var(--cyan)',
+  tool_result:      'var(--green)',
+  hitl_pause:       'var(--orange)',
+  error:            'var(--red)',
+  guardrail_block:  'var(--red)',
+  guardrail_warn:   'var(--orange)',
 }
 
 const EVENT_LABEL: Record<string, string> = {
-  node_start:   'start',
-  node_done:    'done',
-  llm_call:     'llm →',
-  llm_response: '← llm',
-  tool_call:    'tool →',
-  tool_result:  '← tool',
-  hitl_pause:   'paused',
-  error:        'error',
+  node_start:       'start',
+  node_done:        'done',
+  llm_call:         'llm →',
+  llm_response:     '← llm',
+  tool_call:        'tool →',
+  tool_result:      '← tool',
+  hitl_pause:       'paused',
+  error:            'error',
+  guardrail_block:  'blocked',
+  guardrail_warn:   'warned',
 }
 
 // Events that carry useful data worth showing
-const HAS_DATA_TYPES = new Set(['llm_call', 'llm_response', 'tool_call', 'tool_result', 'error'])
+const HAS_DATA_TYPES = new Set(['llm_call', 'llm_response', 'tool_call', 'tool_result', 'error', 'guardrail_block', 'guardrail_warn'])
 
 const STATUS_MAP = {
   running:      { label: 'RUNNING',  color: 'var(--blue)',   bg: 'rgba(124,111,240,0.12)', border: 'rgba(124,111,240,0.3)', pulse: true },

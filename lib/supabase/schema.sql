@@ -111,6 +111,7 @@ create table agent_runs (
   id             uuid        primary key default gen_random_uuid(),
   agent_id       uuid        references agents(id) on delete set null,
   agent_name     text        not null,
+  user_id        uuid        references auth.users(id) on delete set null,
   api_key_id     uuid        references api_keys(id) on delete set null,
   api_key_prefix text,
   input          jsonb       default '{}',
