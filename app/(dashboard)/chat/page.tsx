@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Send, Bot, MessageSquare, Trash2, Loader2, ChevronDown, ThumbsUp, HelpCircle, AlertCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -18,7 +18,7 @@ interface Message {
   clarify?: { runId: string; partial: unknown }
 }
 
-export default function ChatPage() {
+function ChatContent() {
   const searchParams = useSearchParams()
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
@@ -748,5 +748,17 @@ export default function ChatPage() {
         @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0 } }
       `}</style>
     </div>
+  )
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ padding: 24, textAlign: 'center' }}>
+        <Loader2 size={18} style={{ color: 'var(--text3)', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+      </div>
+    }>
+      <ChatContent />
+    </Suspense>
   )
 }
