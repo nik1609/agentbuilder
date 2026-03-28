@@ -31,9 +31,15 @@ export async function POST(req: NextRequest) {
       const query    = resolvedInput
 
       if (provider === 'duckduckgo') {
-        const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`, { signal: AbortSignal.timeout(8000) })
-        const data = await res.json()
-        return NextResponse.json({ ok: true, output: data.AbstractText || JSON.stringify(data.RelatedTopics?.slice(0, 3)) })
+        try {
+          const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`, { signal: AbortSignal.timeout(8000) })
+          const text = await res.text()
+          if (!text.trim()) throw new Error('Empty response')
+          const data = JSON.parse(text)
+          return NextResponse.json({ ok: true, output: data.AbstractText || JSON.stringify(data.RelatedTopics?.slice(0, 3)) })
+        } catch (error) {
+          return NextResponse.json({ ok: false, error: 'DuckDuckGo API error or invalid response' })
+        }
       }
       if (provider === 'tavily') {
         const res = await fetch('https://api.tavily.com/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: apiKey, query, max_results: maxRes }), signal: AbortSignal.timeout(10000) })

@@ -263,13 +263,19 @@ async function executeWebSearch(rawQuery: string, cfg: Record<string, unknown>):
   }
 
   // Fallback: DuckDuckGo instant-answers API (entity/knowledge-graph queries)
-  const params = new URLSearchParams({ q: query, format: 'json', no_html: '1', skip_disambig: '1' })
-  const res = await fetch(`https://api.duckduckgo.com/?${params}`, { signal: AbortSignal.timeout(6000) })
-  const data = await res.json() as { AbstractText?: string; AbstractURL?: string; RelatedTopics?: { Text?: string; FirstURL?: string }[] }
-  const abstract = data.AbstractText ? `${data.AbstractText}\n${data.AbstractURL ?? ''}` : ''
-  const related = (data.RelatedTopics ?? []).slice(0, maxResults)
-    .map(t => [t.Text, t.FirstURL].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
-  return [abstract, related].filter(Boolean).join('\n\n') || `No results found for: "${query}". For reliable web search, configure a Tavily or Serper API key in the tool settings.`
+  try {
+    const params = new URLSearchParams({ q: query, format: 'json', no_html: '1', skip_disambig: '1' })
+    const res = await fetch(`https://api.duckduckgo.com/?${params}`, { signal: AbortSignal.timeout(6000) })
+    const text = await res.text()
+    if (!text.trim()) throw new Error('Empty response')
+    const data = JSON.parse(text) as { AbstractText?: string; AbstractURL?: string; RelatedTopics?: { Text?: string; FirstURL?: string }[] }
+    const abstract = data.AbstractText ? `${data.AbstractText}\n${data.AbstractURL ?? ''}` : ''
+    const related = (data.RelatedTopics ?? []).slice(0, maxResults)
+      .map(t => [t.Text, t.FirstURL].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
+    return [abstract, related].filter(Boolean).join('\n\n') || `No results found for: "${query}". For reliable web search, configure a Tavily or Serper API key in the tool settings.`
+  } catch {
+    return `No results found for: "${query}". Search failed or returned invalid data. For reliable web search, configure a Tavily or Serper API key in the tool settings.`
+  }
 }
 
 // ─── Recursive output compression ─────────────────────────────────────────────
