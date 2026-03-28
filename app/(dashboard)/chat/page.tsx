@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Send, Bot, MessageSquare, Trash2, Loader2, ChevronDown, ThumbsUp, HelpCircle, AlertCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -429,6 +429,8 @@ export default function ChatPage() {
   const filteredAgents = agents.filter(a => a.name.toLowerCase().includes(agentSearch.toLowerCase()))
 
   return (
+        <Suspense fallback={null}>
+
     <div style={{ display: 'flex', height: '100%', background: 'var(--bg)' }}>
 
       {/* Left — agent selector */}
@@ -748,5 +750,6 @@ export default function ChatPage() {
         @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0 } }
       `}</style>
     </div>
+    </Suspense>
   )
 }
