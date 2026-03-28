@@ -250,7 +250,7 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
   }, [pendingAction, actionResuming])
 
   const _handleResumeResult = (data: Record<string, unknown>, ok: boolean) => {
-    setRunResult(data as RunResult)
+    setRunResult(data as unknown as RunResult)
     setTrace(prev => [...prev, ...((data.trace as unknown[]) ?? [])] as TraceEvent[])
     const newStatus = (data.status as string) ?? (ok ? 'completed' : 'failed')
     setRunStatus(newStatus as RunResult['status'])
