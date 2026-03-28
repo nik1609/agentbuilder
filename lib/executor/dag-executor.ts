@@ -206,20 +206,27 @@ async function executeWebSearch(rawQuery: string, cfg: Record<string, unknown>):
     .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&nbsp;/g, ' ')
     .trim()
 
-  // Try html.duckduckgo.com endpoint
+  // Try html.duckduckgo.com and lite endpoints for resilience
   for (const ddgUrl of [
     `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`,
+    `https://duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`,
     `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`,
   ]) {
     try {
       const ddgRes = await fetch(ddgUrl, {
         method: 'GET',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
           'Accept-Language': 'en-US,en;q=0.9',
           'Accept-Encoding': 'gzip, deflate, br',
+          'Referer': 'https://duckduckgo.com/',
           'Cache-Control': 'no-cache',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'same-origin',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
         },
         cache: 'no-store',
         signal: AbortSignal.timeout(9000),
@@ -227,26 +234,42 @@ async function executeWebSearch(rawQuery: string, cfg: Record<string, unknown>):
       if (!ddgRes.ok) continue
       const html = await ddgRes.text()
 
+      // If we got a "Check your browser" or "robot" page, skip this endpoint
+      if (html.includes('ddg-captcha') || html.includes('unusual activity') || html.includes('Checking your browser')) continue
+
       const results: string[] = []
       let m: RegExpExecArray | null
 
-      // Pattern 1: modern DDG HTML — result__a title + result__snippet
+      // Pattern 1: modern DDG HTML (html. version)
       const blockRe = /class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,600}?class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|span|div)>/g
       while ((m = blockRe.exec(html)) !== null && results.length < maxResults) {
         const url = m[1].startsWith('//') ? 'https:' + m[1] : m[1]
+        if (url.includes('duckduckgo.com')) continue
         const title = decodeHtml(m[2])
         const snippet = decodeHtml(m[3])
         if (title || snippet) results.push([title, url, snippet].filter(Boolean).join('\n'))
       }
 
-      // Pattern 2: result links without snippet pairing
+      // Pattern 2: DDG Lite version (table based)
+      if (results.length === 0) {
+        const liteRe = /<a class="result-link" href="([^"]*)">([\s\S]*?)<\/a>[\s\S]{0,300}?<td class="result-snippet">([\s\S]*?)<\/td>/g
+        while ((m = liteRe.exec(html)) !== null && results.length < maxResults) {
+          const url = m[1].startsWith('//') ? 'https:' + m[1] : m[1]
+          if (url.includes('duckduckgo.com')) continue
+          const title = decodeHtml(m[2])
+          const snippet = decodeHtml(m[3])
+          if (title || snippet) results.push([title, url, snippet].filter(Boolean).join('\n'))
+        }
+      }
+
+      // Pattern 3: fallback link matches
       if (results.length === 0) {
         const linkRe = /href="(https?:\/\/[^"]+)"[^>]*>([\s\S]{5,200}?)<\/a>/g
         while ((m = linkRe.exec(html)) !== null && results.length < maxResults) {
           const url = m[1]
-          if (url.includes('duckduckgo.com')) continue
+          if (url.includes('duckduckgo.com') || url.includes('w3.org')) continue
           const title = decodeHtml(m[2])
-          if (title.length > 5) results.push([title, url].join('\n'))
+          if (title.length > 5 && !title.includes('<')) results.push([title, url].join('\n'))
         }
       }
 
