@@ -22,17 +22,19 @@ export default function ConditionNode({ id, data, selected }: NodeProps) {
         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#f5a020' }}>Condition</span>
       </div>
       <div style={{ padding: '8px 12px 10px' }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 3, lineHeight: 1.3 }}>{d.label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 3 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
+          <NodeIdChip id={id} />
+        </div>
         {d.condition && (
           <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
             {String(d.condition).slice(0, 50)}
           </div>
         )}
       </div>
-      {selected && <NodeIdChip id={id} />}
-      <Handle type="target" position={Position.Left} style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #f5a020', left: -6 }} />
-      <Handle type="source" position={Position.Right} id="true" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #22d79a', right: -6, top: '35%' }} />
-      <Handle type="source" position={Position.Right} id="false" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #e85555', right: -6, top: '65%' }} />
+      <Handle type="target" position={Position.Top} title="Input" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #f5a020', top: -6 }} />
+      <Handle type="source" position={Position.Bottom} id="true" title="True → condition met" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #22d79a', bottom: -6, left: '30%', transform: 'translateX(-50%)' }} />
+      <Handle type="source" position={Position.Bottom} id="false" title="False → condition not met" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #e85555', bottom: -6, left: '70%', transform: 'translateX(-50%)' }} />
     </div>
   )
 }

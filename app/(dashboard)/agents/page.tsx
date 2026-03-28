@@ -1,7 +1,8 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { Bot, Plus, Trash2, ExternalLink, Copy, CheckCircle, Zap, Download } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Bot, Plus, Trash2, ExternalLink, Zap, Upload, X, AlertCircle } from 'lucide-react'
 
 interface Agent {
   id: string; name: string; description: string; version: number
@@ -9,9 +10,14 @@ interface Agent {
 }
 
 export default function AgentsPage() {
+  const router = useRouter()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
+  const [importJson, setImportJson] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     fetch('/api/agents').then(r => r.text()).then(t => { const d = (() => { try { return JSON.parse(t) } catch { return [] } })()
@@ -20,92 +26,7 @@ export default function AgentsPage() {
     })
   }, [])
 
-  const copyEndpoint = (id: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/api/agents/${id}/run`)
-    setCopied(id)
-    setTimeout(() => setCopied(null), 2000)
-  }
 
-  const downloadPostman = (agent: Agent) => {
-    const baseUrl = window.location.origin
-    const collection = {
-      info: {
-        _postman_id: agent.id,
-        name: agent.name,
-        description: `AgentHub — ${agent.name}\n\n${agent.description || ''}\n\nEndpoint: POST ${baseUrl}/api/agents/${agent.id}/run`,
-        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
-      },
-      variable: [
-        { key: 'baseUrl', value: baseUrl,   type: 'string' },
-        { key: 'agentId', value: agent.id,  type: 'string' },
-        { key: 'apiKey',  value: 'test',    type: 'string', description: 'Use "test" for local testing, or replace with a real key from the API Keys page' },
-        { key: 'runId',   value: '',        type: 'string', description: 'Paste the runId from the Run Agent response here (needed for HITL resume)' },
-      ],
-      item: [
-        {
-          name: '1. Run Agent',
-          request: {
-            method: 'POST',
-            header: [
-              { key: 'Content-Type',   value: 'application/json' },
-              { key: 'X-AgentHub-Key', value: '{{apiKey}}' },
-            ],
-            body: {
-              mode: 'raw',
-              raw: JSON.stringify({ message: 'Hello! What can you help me with?' }, null, 2),
-              options: { raw: { language: 'json' } },
-            },
-            url: {
-              raw: '{{baseUrl}}/api/agents/{{agentId}}/run',
-              host: ['{{baseUrl}}'],
-              path: ['api', 'agents', '{{agentId}}', 'run'],
-            },
-            description: 'Runs the agent. If status is "waiting_hitl", use request #2 or #3 to resume.',
-          },
-        },
-        {
-          name: '2. Resume HITL (Approve)',
-          request: {
-            method: 'POST',
-            header: [{ key: 'Content-Type', value: 'application/json' }, { key: 'X-AgentHub-Key', value: '{{apiKey}}' }],
-            body: { mode: 'raw', raw: JSON.stringify({ feedback: '' }, null, 2), options: { raw: { language: 'json' } } },
-            url: { raw: '{{baseUrl}}/api/runs/{{runId}}/resume', host: ['{{baseUrl}}'], path: ['api', 'runs', '{{runId}}', 'resume'] },
-            description: 'Approves a paused HITL step. Set {{runId}} from the Run Agent response.',
-          },
-        },
-        {
-          name: '3. Resume HITL (With Feedback)',
-          request: {
-            method: 'POST',
-            header: [{ key: 'Content-Type', value: 'application/json' }, { key: 'X-AgentHub-Key', value: '{{apiKey}}' }],
-            body: { mode: 'raw', raw: JSON.stringify({ feedback: 'Please make the response more concise' }, null, 2), options: { raw: { language: 'json' } } },
-            url: { raw: '{{baseUrl}}/api/runs/{{runId}}/resume', host: ['{{baseUrl}}'], path: ['api', 'runs', '{{runId}}', 'resume'] },
-            description: 'Resumes with reviewer notes — the agent revises based on your feedback.',
-          },
-        },
-        {
-          name: '4. Stream Run (SSE)',
-          request: {
-            method: 'GET',
-            header: [{ key: 'X-AgentHub-Key', value: '{{apiKey}}' }],
-            url: {
-              raw: `{{baseUrl}}/api/agents/{{agentId}}/run?message=Hello`,
-              host: ['{{baseUrl}}'], path: ['api', 'agents', '{{agentId}}', 'run'],
-              query: [{ key: 'message', value: 'Hello' }],
-            },
-            description: 'Real-time SSE stream. Events: start → trace (per node) → done.',
-          },
-        },
-      ],
-    }
-    const blob = new Blob([JSON.stringify(collection, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${agent.name.replace(/[^a-z0-9]/gi, '_')}_postman.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
 
   const deleteAgent = async (id: string) => {
     if (!confirm('Delete this agent? This cannot be undone.')) return
@@ -113,8 +34,87 @@ export default function AgentsPage() {
     setAgents(a => a.filter(x => x.id !== id))
   }
 
+  const handleImport = async () => {
+    setImportError('')
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(importJson)
+    } catch {
+      setImportError('Invalid JSON — check formatting and try again.')
+      return
+    }
+    if (!parsed.name || typeof parsed.name !== 'string') {
+      setImportError('Missing required field: "name"')
+      return
+    }
+    if (!parsed.schema || typeof parsed.schema !== 'object') {
+      setImportError('Missing required field: "schema" (nodes + edges)')
+      return
+    }
+    setImporting(true)
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: parsed.name, description: parsed.description ?? '', schema: parsed.schema }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as { error?: string }).error ?? 'Import failed')
+      }
+      const created = await res.json() as Agent
+      setAgents(a => [created, ...a])
+      setShowImport(false)
+      setImportJson('')
+      router.push(`/builder/${created.id}`)
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div style={{ padding: '48px', maxWidth: 900, margin: '0 auto' }}>
+
+      {/* Import Modal */}
+      {showImport && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 560, borderRadius: 20, background: 'var(--surface)', border: '1px solid var(--border)', padding: '28px 28px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>Import Agent</h2>
+                <p style={{ fontSize: 12, color: 'var(--text2)' }}>Paste agent JSON exported from another account or pre-built template</p>
+              </div>
+              <button onClick={() => { setShowImport(false); setImportError(''); setImportJson('') }} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)' }}>
+                <X size={14} />
+              </button>
+            </div>
+            <textarea
+              ref={textareaRef}
+              value={importJson}
+              onChange={e => { setImportJson(e.target.value); setImportError('') }}
+              placeholder={'{\n  "name": "My Agent",\n  "description": "...",\n  "schema": { "nodes": [], "edges": [] }\n}'}
+              rows={12}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${importError ? 'var(--red)' : 'var(--border)'}`, background: 'var(--bg)', color: 'var(--text)', fontSize: 12, fontFamily: 'monospace', resize: 'vertical', outline: 'none', lineHeight: 1.6, boxSizing: 'border-box' }}
+            />
+            {importError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, padding: '7px 10px', borderRadius: 8, background: 'rgba(232,85,85,0.1)', border: '1px solid rgba(232,85,85,0.25)' }}>
+                <AlertCircle size={13} color="var(--red)" />
+                <span style={{ fontSize: 12, color: 'var(--red)' }}>{importError}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={() => { setShowImport(false); setImportError(''); setImportJson('') }} style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={handleImport} disabled={importing || !importJson.trim()} style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: importing || !importJson.trim() ? 'not-allowed' : 'pointer', opacity: importing || !importJson.trim() ? 0.6 : 1 }}>
+                {importing ? 'Importing…' : 'Import & Open Builder'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 48 }}>
@@ -124,14 +124,24 @@ export default function AgentsPage() {
             {loading ? 'Loading…' : `${agents.length} agent${agents.length !== 1 ? 's' : ''} · each deployed as a live API endpoint`}
           </p>
         </div>
-        <Link href="/agents/new" style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '11px 20px', borderRadius: 12,
-          background: 'var(--blue)', color: '#fff',
-          fontSize: 14, fontWeight: 600, textDecoration: 'none',
-        }}>
-          <Plus size={15} /> New Agent
-        </Link>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => setShowImport(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '11px 18px', borderRadius: 12,
+            border: '1px solid var(--border)', background: 'var(--surface)',
+            color: 'var(--text2)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          }}>
+            <Upload size={15} /> Import
+          </button>
+          <Link href="/agents/new" style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '11px 20px', borderRadius: 12,
+            background: 'var(--blue)', color: '#fff',
+            fontSize: 14, fontWeight: 600, textDecoration: 'none',
+          }}>
+            <Plus size={15} /> New Agent
+          </Link>
+        </div>
       </div>
 
       {loading ? (
@@ -174,14 +184,6 @@ export default function AgentsPage() {
                 <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>
                   {agent.description || 'No description'}
                 </p>
-                {/* Endpoint */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => copyEndpoint(agent.id)}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)', fontFamily: 'monospace' }}>POST</span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text3)' }}>
-                    /api/agents/{agent.id.slice(0, 8)}…/run
-                  </span>
-                  {copied === agent.id ? <CheckCircle size={11} color="var(--green)" /> : <Copy size={11} color="var(--text3)" />}
-                </div>
               </div>
 
               {/* Actions */}
@@ -190,17 +192,6 @@ export default function AgentsPage() {
                   <Zap size={11} color="var(--text3)" />
                   <span style={{ fontSize: 11, color: 'var(--text3)' }}>{agent.run_count}</span>
                 </div>
-                <button
-                  onClick={() => downloadPostman(agent)}
-                  title="Download Postman collection"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '8px 14px', borderRadius: 10,
-                    border: '1px solid var(--border)', background: 'var(--surface2)',
-                    color: 'var(--text2)', fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                  }}>
-                  <Download size={12} /> Postman
-                </button>
                 <Link href={`/builder/${agent.id}`} style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '8px 16px', borderRadius: 10,

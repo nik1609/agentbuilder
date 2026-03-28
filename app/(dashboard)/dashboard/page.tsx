@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Bot, Zap, BarChart3, KeyRound, Plus, ArrowRight, CheckCircle, XCircle, Clock, Sparkles, Loader2 } from 'lucide-react'
+import { Bot, Zap, BarChart3, KeyRound, Plus, ArrowRight, CheckCircle, XCircle, Clock, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown } from 'lucide-react'
 
 interface Run {
   id: string; agent_name: string; status: string; tokens: number; latency_ms: number; created_at: string
@@ -9,10 +9,14 @@ interface Run {
 interface Agent {
   id: string; name: string; run_count: number; updated_at: string; description: string
 }
+interface HitlRun {
+  id: string; agent_name: string; created_at: string; approving?: boolean; rejecting?: boolean
+}
 
 export default function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [runs, setRuns] = useState<Run[]>([])
+  const [hitlRuns, setHitlRuns] = useState<HitlRun[]>([])
   const [loading, setLoading] = useState(true)
   const [seeding, setSeeding] = useState(false)
   const [seedDone, setSeedDone] = useState(false)
@@ -22,13 +26,21 @@ export default function DashboardPage() {
   const loadData = () => Promise.all([
     fetch('/api/agents').then(safeJson),
     fetch('/api/runs').then(safeJson),
-  ]).then(([a, r]) => {
+    fetch('/api/runs?status=waiting_hitl').then(safeJson),
+  ]).then(([a, r, h]) => {
     setAgents(Array.isArray(a) ? a : [])
     setRuns(Array.isArray(r) ? r : [])
+    setHitlRuns((Array.isArray(h) ? h : []).filter((x: Run) => x.status === 'waiting_hitl'))
     setLoading(false)
   })
 
   useEffect(() => { loadData() }, [])
+
+  const hitlAction = async (runId: string, action: 'approve' | 'reject') => {
+    setHitlRuns(prev => prev.map(r => r.id === runId ? { ...r, [action === 'approve' ? 'approving' : 'rejecting']: true } : r))
+    await fetch(`/api/runs/${runId}/hitl/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+    setHitlRuns(prev => prev.filter(r => r.id !== runId))
+  }
 
   const seedSamples = async () => {
     setSeeding(true)
@@ -138,7 +150,9 @@ export default function DashboardPage() {
         <div style={{ borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--border)', overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Recent Runs</span>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text3)' }}>{completedRuns}/{totalRuns} completed</span>
+            <Link href="/runs" style={{ fontSize: 12, color: 'var(--blue)', display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>
+              View all <ArrowRight size={12} />
+            </Link>
           </div>
           {loading ? (
             <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading…</div>
@@ -149,7 +163,10 @@ export default function DashboardPage() {
               <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Run an agent from the builder to see activity</p>
             </div>
           ) : runs.slice(0, 6).map(run => (
-            <div key={run.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', borderBottom: '1px solid var(--border2)' }}>
+            <Link key={run.id} href={`/runs/${run.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', borderBottom: '1px solid var(--border2)', textDecoration: 'none', transition: 'background 0.1s' }}
+              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--surface2)')}
+              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {run.status === 'completed' ? <CheckCircle size={14} color="var(--green)" /> : run.status === 'failed' ? <XCircle size={14} color="var(--red)" /> : <Clock size={14} color="var(--orange)" />}
                 <div>
@@ -160,10 +177,45 @@ export default function DashboardPage() {
               <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text3)' }}>
                 {new Date(run.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
-            </div>
+            </Link>
           ))}
         </div>
       </div>
+
+      {/* HITL Waiting */}
+      {hitlRuns.length > 0 && (
+        <div style={{ marginBottom: 24, borderRadius: 16, background: 'rgba(245,160,32,0.06)', border: '1px solid rgba(245,160,32,0.3)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 24px', borderBottom: '1px solid rgba(245,160,32,0.2)' }}>
+            <MessageSquare size={15} color="var(--orange)" />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Awaiting Approval</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 6, background: 'rgba(245,160,32,0.15)', color: 'var(--orange)' }}>{hitlRuns.length}</span>
+          </div>
+          {hitlRuns.map(run => (
+            <div key={run.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 24px', borderBottom: '1px solid rgba(245,160,32,0.1)' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>{run.agent_name}</div>
+                <div style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text3)' }}>{new Date(run.created_at).toLocaleString()}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => hitlAction(run.id, 'reject')}
+                  disabled={run.approving || run.rejecting}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(232,85,85,0.4)', background: 'rgba(232,85,85,0.06)', color: 'var(--red)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: run.rejecting ? 0.6 : 1 }}
+                >
+                  {run.rejecting ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ThumbsDown size={12} />} Reject
+                </button>
+                <button
+                  onClick={() => hitlAction(run.id, 'approve')}
+                  disabled={run.approving || run.rejecting}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(34,215,154,0.4)', background: 'rgba(34,215,154,0.06)', color: 'var(--green)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: run.approving ? 0.6 : 1 }}
+                >
+                  {run.approving ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ThumbsUp size={12} />} Approve
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Quick actions */}
       <div style={{ borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--border)', padding: 24 }}>

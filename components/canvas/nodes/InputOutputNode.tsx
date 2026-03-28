@@ -25,14 +25,16 @@ export default function InputOutputNode({ id, data, selected }: NodeProps) {
         </span>
       </div>
       <div style={{ padding: '8px 12px 10px' }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', lineHeight: 1.3 }}>{d.label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
+          <NodeIdChip id={id} />
+        </div>
       </div>
-      {selected && <NodeIdChip id={id} />}
       {isInput && (
-        <Handle type="source" position={Position.Right} style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, right: -6 }} />
+        <Handle type="source" position={Position.Bottom} title="Flow starts here — connect to your first node" style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, bottom: -6 }} />
       )}
       {!isInput && (
-        <Handle type="target" position={Position.Left} style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, left: -6 }} />
+        <Handle type="target" position={Position.Top} title="Flow ends here — connect from your last node" style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, top: -6 }} />
       )}
     </div>
   )

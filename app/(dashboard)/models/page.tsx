@@ -24,10 +24,10 @@ const PROVIDER_MODELS: Record<string, string[]> = {
 }
 
 const PROVIDER_META: Record<string, { color: string; bg: string; apiKeyLabel: string; apiKeyPlaceholder: string; baseUrlDefault: string; note: string }> = {
-  google:             { color: '#4285f4', bg: 'rgba(66,133,244,0.1)',   apiKeyLabel: 'API Key',             apiKeyPlaceholder: 'AIza...',         baseUrlDefault: '', note: '' },
-  anthropic:          { color: '#d97706', bg: 'rgba(217,119,6,0.1)',    apiKeyLabel: 'API Key',             apiKeyPlaceholder: 'sk-ant-...',      baseUrlDefault: '', note: '' },
-  'openai-compatible':{ color: '#10a37f', bg: 'rgba(16,163,127,0.1)',   apiKeyLabel: 'API Key',             apiKeyPlaceholder: 'sk-...',          baseUrlDefault: 'https://api.openai.com/v1', note: '' },
-  ollama:             { color: '#7c6ff0', bg: 'rgba(124,111,240,0.1)',  apiKeyLabel: 'API Key (any value)', apiKeyPlaceholder: 'ollama',          baseUrlDefault: 'http://localhost:11434/v1',  note: 'Ollama must be running locally. Any non-empty string works as API key.' },
+  google:             { color: '#4285f4', bg: 'rgba(66,133,244,0.1)',   apiKeyLabel: 'Gemini API Key',      apiKeyPlaceholder: 'AIza... (leave blank to use GEMINI_API_KEY env var)', baseUrlDefault: '', note: 'Leave blank to use the GEMINI_API_KEY environment variable. Or paste your key from aistudio.google.com directly here — it stays in your account only.' },
+  anthropic:          { color: '#d97706', bg: 'rgba(217,119,6,0.1)',    apiKeyLabel: 'Anthropic API Key',   apiKeyPlaceholder: 'sk-ant-...',      baseUrlDefault: '', note: 'Get your key from console.anthropic.com. Leave blank to use ANTHROPIC_API_KEY env var.' },
+  'openai-compatible':{ color: '#10a37f', bg: 'rgba(16,163,127,0.1)',   apiKeyLabel: 'API Key',             apiKeyPlaceholder: 'sk-...',          baseUrlDefault: 'https://api.openai.com/v1', note: 'Works with OpenAI, Groq, Together AI, Mistral, or any OpenAI-compatible endpoint. Set Base URL accordingly.' },
+  ollama:             { color: '#7c6ff0', bg: 'rgba(124,111,240,0.1)',  apiKeyLabel: 'API Key (any value)', apiKeyPlaceholder: 'ollama',          baseUrlDefault: 'http://localhost:11434/v1',  note: 'Ollama must be running locally. Any non-empty string works as the API key.' },
 }
 
 type FormState = { name: string; provider: string; modelId: string; temperature: string; maxTokens: string; apiKey: string; baseUrl: string }

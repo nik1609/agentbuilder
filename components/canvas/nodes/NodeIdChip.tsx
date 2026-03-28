@@ -4,7 +4,7 @@ import { Copy, Check } from 'lucide-react'
 
 export default function NodeIdChip({ id }: { id: string }) {
   const [copied, setCopied] = useState(false)
-  const ref = `{{node.${id}}}`
+  const ref = `{{${id}}}`
   const copy = (e: React.MouseEvent) => {
     e.stopPropagation()
     navigator.clipboard.writeText(ref).then(() => {
@@ -13,23 +13,21 @@ export default function NodeIdChip({ id }: { id: string }) {
     })
   }
   return (
-    <div
+    <button
       onClick={copy}
-      title={`Copy reference: ${ref}`}
+      title={`Copy node reference: ${ref}`}
       style={{
-        display: 'flex', alignItems: 'center', gap: 4,
-        padding: '3px 7px', borderTop: '1px solid var(--border2)',
-        background: 'var(--bg)', cursor: 'pointer',
-        justifyContent: 'space-between',
+        background: 'none', border: 'none', cursor: 'pointer',
+        padding: '1px 3px', borderRadius: 3, flexShrink: 0,
+        display: 'flex', alignItems: 'center',
+        color: copied ? '#22d79a' : 'var(--text3)',
+        opacity: 0.55,
+        transition: 'opacity 0.15s, color 0.15s',
       }}
+      onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+      onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.55')}
     >
-      <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'var(--text3)', letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-        {id}
-      </span>
-      {copied
-        ? <Check size={9} color="#22d79a" />
-        : <Copy size={9} color="var(--text3)" />
-      }
-    </div>
+      {copied ? <Check size={9} /> : <Copy size={9} />}
+    </button>
   )
 }

@@ -22,16 +22,18 @@ export default function HITLNode({ id, data, selected }: NodeProps) {
         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#b080f8' }}>HITL</span>
       </div>
       <div style={{ padding: '8px 12px 10px' }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 3, lineHeight: 1.3 }}>{d.label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 3 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
+          <NodeIdChip id={id} />
+        </div>
         {d.question && (
           <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             {String(d.question).slice(0, 60)}
           </div>
         )}
       </div>
-      {selected && <NodeIdChip id={id} />}
-      <Handle type="target" position={Position.Left} style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #b080f8', left: -6 }} />
-      <Handle type="source" position={Position.Right} style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #b080f8', right: -6 }} />
+      <Handle type="target" position={Position.Top} title="Input — pauses here and awaits human review" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #b080f8', top: -6 }} />
+      <Handle type="source" position={Position.Bottom} title="Output — continues after approval (feedback included)" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #b080f8', bottom: -6 }} />
     </div>
   )
 }

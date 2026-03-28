@@ -135,6 +135,7 @@ create trigger agents_updated_at before update on agents
 
 -- ─── Enable RLS on all user-owned tables ─────────────────────────────────────
 alter table agents enable row level security;
+alter table agent_runs enable row level security;
 alter table tools enable row level security;
 alter table models enable row level security;
 alter table prompts enable row level security;
@@ -143,8 +144,9 @@ alter table guardrails enable row level security;
 alter table api_keys enable row level security;
 
 -- ─── Policies: users can only see their own data ──────────────────────────────
-create policy "users_own_agents" on agents for all using (auth.uid() = user_id);
-create policy "users_own_tools" on tools for all using (auth.uid() = user_id);
+create policy "users_own_agents"     on agents     for all using (auth.uid() = user_id);
+create policy "users_own_agent_runs" on agent_runs  for all using (auth.uid() = user_id);
+create policy "users_own_tools"      on tools       for all using (auth.uid() = user_id);
 create policy "users_own_models" on models for all using (auth.uid() = user_id);
 create policy "users_own_prompts" on prompts for all using (auth.uid() = user_id);
 create policy "users_own_memory" on memory_configs for all using (auth.uid() = user_id);
@@ -189,3 +191,13 @@ alter table datatable_rows enable row level security;
 
 create policy "users_own_datatables"     on datatables     for all using (auth.uid() = user_id);
 create policy "users_own_datatable_rows" on datatable_rows for all using (auth.uid() = user_id);
+
+-- ─── Contact Submissions ───────────────────────────────────────────────────────
+create table if not exists contact_submissions (
+  id         uuid        primary key default gen_random_uuid(),
+  name       text        not null,
+  email      text        not null,
+  message    text        not null,
+  created_at timestamptz not null default now()
+);
+-- No RLS needed — only admin (service role) reads/writes this table

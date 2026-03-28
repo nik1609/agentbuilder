@@ -19,21 +19,21 @@ export default function PassthroughNode({ id, data, selected }: NodeProps) {
       background: 'var(--surface2)', border: `1px solid ${color}40`,
       boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
     }}>
-      <Handle type="target" position={Position.Left} style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, left: -6 }} />
+      <Handle type="target" position={Position.Top} title="Input — receives output from previous node" style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, top: -6 }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px 6px', borderBottom: `1px solid ${color}20` }}>
         <div style={{ width: 18, height: 18, borderRadius: 5, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ArrowRightLeft size={9} color={color} />
         </div>
         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color }}>I/O</span>
-        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text2)', marginLeft: 2 }}>{d.label}</span>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text2)', marginLeft: 2, flex: 1 }}>{d.label}</span>
+        <NodeIdChip id={id} />
       </div>
       <div style={{ padding: '7px 12px 9px' }}>
         <div style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text3)', lineHeight: 1.4, wordBreak: 'break-all' }}>
           {preview}
         </div>
       </div>
-      {selected && <NodeIdChip id={id} />}
-      <Handle type="source" position={Position.Right} style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, right: -6 }} />
+      <Handle type="source" position={Position.Bottom} title="Output — passes transformed value to next node" style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, bottom: -6 }} />
     </div>
   )
 }

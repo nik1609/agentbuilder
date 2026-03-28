@@ -5,7 +5,7 @@ import { useState } from 'react'
 
 interface TracePanelProps {
   trace: TraceEvent[]
-  status: 'idle' | 'running' | 'completed' | 'failed' | 'waiting_hitl'
+  status: 'idle' | 'running' | 'completed' | 'failed' | 'waiting_hitl' | 'waiting_clarify'
   tokens?: number
   latencyMs?: number
 }
@@ -82,7 +82,8 @@ const STATUS_MAP = {
   running:      { label: 'RUNNING',  color: 'var(--blue)',   bg: 'rgba(124,111,240,0.12)', border: 'rgba(124,111,240,0.3)', pulse: true },
   completed:    { label: 'DONE',     color: 'var(--green)',  bg: 'rgba(34,215,154,0.12)',  border: 'rgba(34,215,154,0.3)',  pulse: false },
   failed:       { label: 'FAILED',   color: 'var(--red)',    bg: 'rgba(232,85,85,0.12)',   border: 'rgba(232,85,85,0.3)',   pulse: false },
-  waiting_hitl: { label: 'PAUSED',   color: 'var(--orange)', bg: 'rgba(245,160,32,0.12)',  border: 'rgba(245,160,32,0.3)',  pulse: false },
+  waiting_hitl:    { label: 'PAUSED',   color: 'var(--orange)', bg: 'rgba(245,160,32,0.12)',  border: 'rgba(245,160,32,0.3)',  pulse: false },
+  waiting_clarify: { label: 'PAUSED',   color: '#f472b6',       bg: 'rgba(244,114,182,0.12)', border: 'rgba(244,114,182,0.3)', pulse: false },
   idle:         null,
 } as const
 
@@ -105,7 +106,7 @@ const StatusBadge = ({ status }: { status: TracePanelProps['status'] }) => {
 const StatusIcon = ({ status }: { status: TracePanelProps['status'] }) => {
   if (status === 'completed') return <CheckCircle2 size={12} style={{ color: 'var(--green)' }} />
   if (status === 'failed') return <XCircle size={12} style={{ color: 'var(--red)' }} />
-  if (status === 'waiting_hitl') return <Pause size={12} style={{ color: 'var(--orange)' }} />
+  if (status === 'waiting_hitl' || status === 'waiting_clarify') return <Pause size={12} style={{ color: status === 'waiting_clarify' ? '#f472b6' : 'var(--orange)' }} />
   if (status === 'running') return <Activity size={12} style={{ color: 'var(--blue)' }} className="animate-pulse" />
   return <Activity size={12} style={{ color: 'var(--text3)' }} />
 }

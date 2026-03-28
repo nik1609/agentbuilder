@@ -1,20 +1,22 @@
 'use client'
 import { useState } from 'react'
-import { Info, Wrench, Cpu, FileText, Database, Shield } from 'lucide-react'
+import { Info, Wrench, Cpu, FileText, Database, Shield, GitBranch } from 'lucide-react'
 import AgentInfoTab from './tabs/AgentInfoTab'
 import ToolsTab from './tabs/ToolsTab'
 import ModelsTab from './tabs/ModelsTab'
 import PromptsTab from './tabs/PromptsTab'
 import MemoryTab from './tabs/MemoryTab'
 import GuardrailsTab from './tabs/GuardrailsTab'
+import OrchestratorTab from './tabs/OrchestratorTab'
 
 const TABS = [
-  { id: 'Agent',      label: 'Agent',      icon: Info },
-  { id: 'Tools',      label: 'Tools',      icon: Wrench },
-  { id: 'Models',     label: 'Models',     icon: Cpu },
-  { id: 'Prompts',    label: 'Prompts',    icon: FileText },
-  { id: 'Memory',     label: 'Memory',     icon: Database },
-  { id: 'Guardrails', label: 'Guardrails', icon: Shield },
+  { id: 'Agent',        label: 'Agent',        icon: Info },
+  { id: 'Tools',        label: 'Tools',        icon: Wrench },
+  { id: 'Models',       label: 'Models',       icon: Cpu },
+  { id: 'Prompts',      label: 'Prompts',      icon: FileText },
+  { id: 'Memory',       label: 'Memory',       icon: Database },
+  { id: 'Guardrails',   label: 'Guardrails',   icon: Shield },
+  { id: 'Orchestrator', label: 'Orchestrator', icon: GitBranch },
 ] as const
 
 type Tab = typeof TABS[number]['id']
@@ -116,12 +118,13 @@ export default function ConfigStudio({ currentAgentId, currentAgentName }: Confi
 
         {/* Tab content */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {activeTab === 'Agent'      && <AgentInfoTab agentId={currentAgentId ?? ''} agentName={currentAgentName ?? ''} />}
-          {activeTab === 'Tools'      && <ToolsTab />}
-          {activeTab === 'Models'     && <ModelsTab />}
-          {activeTab === 'Prompts'    && <PromptsTab />}
-          {activeTab === 'Memory'     && <MemoryTab />}
-          {activeTab === 'Guardrails' && <GuardrailsTab />}
+          {activeTab === 'Agent'        && <AgentInfoTab agentId={currentAgentId ?? ''} agentName={currentAgentName ?? ''} />}
+          {activeTab === 'Tools'        && <ToolsTab />}
+          {activeTab === 'Models'       && <ModelsTab />}
+          {activeTab === 'Prompts'      && <PromptsTab />}
+          {activeTab === 'Memory'       && <MemoryTab />}
+          {activeTab === 'Guardrails'   && <GuardrailsTab />}
+          {activeTab === 'Orchestrator' && <OrchestratorTab agentId={currentAgentId ?? ''} />}
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-export type NodeType = 'llm' | 'tool' | 'condition' | 'hitl' | 'input' | 'output' | 'passthrough'
+export type NodeType = 'llm' | 'tool' | 'condition' | 'hitl' | 'clarify' | 'input' | 'output' | 'passthrough' | 'loop' | 'fork' | 'join' | 'switch'
 
 export interface MemorySource {
   id: string
@@ -6,6 +6,25 @@ export interface MemorySource {
   memoryConfigId?: string  // used when type === 'agent_runs'
   nodeId?: string          // used when type === 'node_output'
   nodeLabel?: string       // display label for node_output sources
+}
+
+// ── Retry config (per-node) ─────────────────────────────────────────────────
+export interface RetryConfig {
+  enabled: boolean
+  maxAttempts: number      // default 3
+  backoffMs: number        // initial delay, doubles each attempt
+  retryOn: 'error' | 'empty_output' | 'guardrail_block'
+}
+
+// ── Fork / Join / Loop / Switch configs ─────────────────────────────────────
+export interface ForkBranch {
+  id: string
+  label: string
+}
+
+export interface SwitchCase {
+  label: string
+  match: string
 }
 
 export interface NodeData extends Record<string, unknown> {
@@ -18,6 +37,10 @@ export interface NodeData extends Record<string, unknown> {
   maxTokens?: number
   guardrailId?: string
   memorySources?: MemorySource[]
+  // LLM agentic mode
+  agenticMode?: boolean
+  boundTools?: string[]         // tool names attached in agentic mode
+  maxToolIterations?: number    // default 10
   // Tool node
   toolName?: string
   toolConfig?: Record<string, unknown>
@@ -25,10 +48,41 @@ export interface NodeData extends Record<string, unknown> {
   compressModel?: string
   // Condition node
   condition?: string
+  // Clarify node
+  clarifySystemPrompt?: string
   // HITL node
   question?: string
+  hitlType?: 'approval' | 'chat' | 'form'
+  contextKeys?: string[]
+  agentModel?: string
+  agentSystemPrompt?: string
+  hitlFields?: { name: string; label: string; type: 'text' | 'select' | 'boolean'; options?: string[] }[]
+  timeoutMinutes?: number
+  timeoutAction?: 'approve' | 'reject'
+  notificationWebhook?: string
+  // Loop node
+  maxIterations?: number
+  exitCondition?: string
+  exitConditionType?: 'llm' | 'expression'
+  onMaxReached?: 'continue' | 'error'
+  // Fork node
+  branches?: ForkBranch[]
+  inputMode?: 'broadcast' | 'split'
+  // Join node
+  joinMode?: 'wait_all' | 'wait_first' | 'wait_any_n'
+  joinN?: number
+  mergeAs?: string
+  mergeFormat?: 'array' | 'object' | 'concatenated'
+  // Switch node
+  switchType?: 'value_match' | 'llm_classify' | 'expression'
+  inputKey?: string
+  cases?: SwitchCase[]
+  defaultCase?: string
+  // Retry (any node)
+  retry?: RetryConfig
   // General
   description?: string
+  outputKey?: string           // named output key for state dict
 }
 
 export interface AgentNode {
@@ -47,9 +101,15 @@ export interface AgentEdge {
   label?: string
 }
 
+export interface OrchestratorConfig {
+  enabled: boolean
+  model: string   // key from user's registered models
+}
+
 export interface AgentSchema {
   nodes: AgentNode[]
   edges: AgentEdge[]
+  orchestratorConfig?: OrchestratorConfig
 }
 
 export interface ToolConfig {
@@ -138,6 +198,7 @@ export interface ApiKey {
   createdAt: string
   lastUsed?: string
   totalCalls: number
+  maxCallsPerDay?: number
 }
 
 export interface AgentRun {
@@ -146,9 +207,10 @@ export interface AgentRun {
   agentName: string
   input: Record<string, unknown>
   output?: Record<string, unknown>
-  status: 'running' | 'completed' | 'failed' | 'waiting_hitl'
+  status: 'running' | 'completed' | 'failed' | 'waiting_hitl' | 'waiting_clarify'
   tokens: number
   latencyMs: number
+  costUsd?: number
   error?: string
   trace: TraceEvent[]
   createdAt: string
@@ -157,8 +219,39 @@ export interface AgentRun {
 
 export interface TraceEvent {
   ts: number // ms offset from start
-  type: 'node_start' | 'node_done' | 'node_output' | 'tool_call' | 'tool_result' | 'llm_call' | 'llm_response' | 'error' | 'hitl_pause' | 'guardrail_block' | 'guardrail_warn' | 'compress_start' | 'compress_done'
+  type: 'node_start' | 'node_done' | 'node_output' | 'tool_call' | 'tool_result' | 'llm_call' | 'llm_response' | 'llm_token' | 'error' | 'hitl_pause' | 'clarify_pause' | 'guardrail_block' | 'guardrail_warn' | 'compress_start' | 'compress_done' | 'loop_iteration' | 'fork_start' | 'fork_done' | 'join_wait' | 'join_done' | 'retry' | 'agentic_tool_call' | 'agentic_tool_result'
   nodeId?: string
   message: string
   data?: unknown
+}
+
+// ── HITL types ──────────────────────────────────────────────────────────────
+export interface HITLSession {
+  id: string
+  runId: string
+  nodeId: string
+  status: 'waiting' | 'approved' | 'rejected' | 'timed_out'
+  context?: Record<string, unknown>
+  resolution?: { action: string; reason?: string }
+  createdAt: string
+  resolvedAt?: string
+}
+
+export interface HITLMessage {
+  id: string
+  sessionId: string
+  role: 'agent' | 'human'
+  content: string
+  createdAt: string
+}
+
+// ── Session types ───────────────────────────────────────────────────────────
+export interface Session {
+  id: string
+  runId: string
+  agentId: string
+  userId?: string
+  status: 'running' | 'completed' | 'failed' | 'waiting_hitl' | 'waiting_clarify'
+  createdAt: string
+  expiresAt: string
 }

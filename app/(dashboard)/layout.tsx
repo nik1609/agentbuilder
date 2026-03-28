@@ -1,27 +1,31 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bot, LayoutDashboard, KeyRound, BarChart3, Zap, BookOpen, LogOut, ChevronLeft, ChevronRight, Brain, MessageSquare, Wrench, Table2 } from 'lucide-react'
+import { Bot, LayoutDashboard, KeyRound, BarChart3, Zap, BookOpen, LogOut, ChevronLeft, ChevronRight, Brain, MessageSquare, Wrench, Table2, Activity, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import ThemeToggle from '@/components/ui/ThemeToggle'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 
+// Logical order: overview → build → test/observe → configure → developer
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/agents', label: 'Agents', icon: Bot },
-  { href: '/chat', label: 'Chat', icon: MessageSquare },
-  { href: '/models', label: 'Models', icon: Brain },
-  { href: '/tools', label: 'Tools', icon: Wrench },
-  { href: '/datatables', label: 'Datatables', icon: Table2 },
-  { href: '/api-keys', label: 'API Keys', icon: KeyRound },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/docs', label: 'Docs', icon: BookOpen },
+  { href: '/dashboard',  label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/agents',     label: 'Agents',    icon: Bot },
+  { href: '/build',      label: 'Build via Chat', icon: Wand2 },
+  { href: '/chat',       label: 'Chat',      icon: MessageSquare },
+  { href: '/runs',       label: 'Runs',      icon: Activity },
+  { href: '/analytics',  label: 'Analytics', icon: BarChart3 },
+  { href: '/models',     label: 'Models',    icon: Brain },
+  { href: '/tools',      label: 'Tools',     icon: Wrench },
+  { href: '/datatables', label: 'Datatables',icon: Table2 },
+  { href: '/api-keys',   label: 'API Keys',  icon: KeyRound },
+  { href: '/docs',       label: 'Docs',      icon: BookOpen },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const path = usePathname()
   const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
+  const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null)
 
   const signOut = async () => {
     const supabase = createSupabaseBrowserClient()
@@ -72,15 +76,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {nav.map(({ href, label, icon: Icon }) => {
               const active = path === href || (href !== '/dashboard' && path.startsWith(href))
               return (
-                <Link key={href} href={href} title={collapsed ? label : undefined} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: collapsed ? '10px 0' : '10px 12px',
-                  borderRadius: 8, textDecoration: 'none',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  background: active ? 'rgba(124,111,240,0.12)' : 'transparent',
-                  color: active ? 'var(--blue)' : 'var(--text2)',
-                  transition: 'all 0.15s',
-                }}>
+                <Link
+                  key={href}
+                  href={href}
+                  onMouseEnter={e => {
+                    if (!collapsed) return
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setTooltip({ label, top: rect.top + rect.height / 2 })
+                  }}
+                  onMouseLeave={() => setTooltip(null)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: collapsed ? '10px 0' : '10px 12px',
+                    borderRadius: 8, textDecoration: 'none',
+                    justifyContent: collapsed ? 'center' : 'flex-start',
+                    background: active ? 'rgba(124,111,240,0.12)' : 'transparent',
+                    color: active ? 'var(--blue)' : 'var(--text2)',
+                    transition: 'all 0.15s',
+                  }}>
                   <Icon size={16} style={{ flexShrink: 0 }} />
                   {!collapsed && <span style={{ fontSize: 13, fontWeight: active ? 600 : 500, whiteSpace: 'nowrap' }}>{label}</span>}
                 </Link>
@@ -94,14 +107,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             display: 'flex',
             flexDirection: collapsed ? 'column' : 'row',
             alignItems: 'center',
-            gap: 4  ,
+            gap: 4,
           }}>
             <button onClick={signOut} title="Sign out" style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: collapsed ? '9px 0' : '8px 10px',
+              display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 8,
+              width: collapsed ? 32 : undefined, height: 32,
+              padding: collapsed ? 0 : '0 10px',
               borderRadius: 8, border: 'none', background: 'transparent',
               color: 'var(--text3)', cursor: 'pointer',
-              justifyContent: 'center',
               flex: collapsed ? undefined : 1,
               whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 0,
             }}>
@@ -117,7 +130,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           onClick={() => setCollapsed(c => !c)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           style={{
-            position: 'absolute', right: -12, top: '50%', transform: 'translateY(-50%)',
+            position: 'absolute', right: -12, top: '53.4%', transform: 'translateY(-50%)',
             width: 24, height: 24, borderRadius: 6,
             border: '1px solid var(--border)', background: 'var(--surface)',
             color: 'var(--text3)', cursor: 'pointer',
@@ -130,8 +143,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       </div>
 
-      {/* Main content */}
-      <main style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>{children}</main>
+      {/* Collapsed tooltip — position:fixed so it escapes sidebar overflow clipping */}
+      {collapsed && tooltip && (
+        <div style={{
+          position: 'fixed',
+          left: w + 10,
+          top: tooltip.top,
+          transform: 'translateY(-50%)',
+          zIndex: 9999,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 7,
+          padding: '5px 11px',
+          fontSize: 12,
+          fontWeight: 500,
+          color: 'var(--text)',
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
+        }}>
+          {tooltip.label}
+        </div>
+      )}
+
+      {/* Main content — position:relative + zIndex:0 ensures the sidebar (zIndex:10) always renders above it */}
+      <main style={{ flex: 1, overflow: 'auto', minWidth: 0, position: 'relative', zIndex: 0 }}>{children}</main>
     </div>
   )
 }

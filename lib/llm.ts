@@ -15,6 +15,8 @@ export interface LLMCallOptions {
   maxTokens?: number
   /** Request timeout in ms. Defaults to 60 000. */
   timeout?: number
+  /** Called with each streaming token chunk (if provider supports it). */
+  onToken?: (token: string) => void
 }
 
 export interface LLMResult {
@@ -26,7 +28,7 @@ export interface LLMResult {
 async function callGoogle(opts: LLMCallOptions): Promise<LLMResult> {
   const key = opts.apiKey || process.env.GEMINI_API_KEY!
   const genAI = new GoogleGenerativeAI(key)
-  const model = genAI.getGenerativeModel({
+  const geminiModel = genAI.getGenerativeModel({
     model: opts.model ?? 'gemini-2.5-flash',
     generationConfig: {
       temperature: opts.temperature ?? 0.7,
@@ -41,11 +43,25 @@ async function callGoogle(opts: LLMCallOptions): Promise<LLMResult> {
     ],
   })
 
-  const chat = model.startChat({
+  const chat = geminiModel.startChat({
     systemInstruction: opts.systemPrompt?.trim()
       ? { role: 'user', parts: [{ text: opts.systemPrompt.trim() }] }
       : undefined,
   })
+
+  if (opts.onToken) {
+    // Streaming path
+    const streamResult = await chat.sendMessageStream(opts.userMessage)
+    let text = ''
+    let tokens = 0
+    for await (const chunk of streamResult.stream) {
+      const chunkText = chunk.text()
+      if (chunkText) { opts.onToken(chunkText); text += chunkText }
+      tokens = chunk.usageMetadata?.totalTokenCount ?? tokens
+    }
+    if (!tokens) tokens = Math.ceil(text.length / 4)
+    return { text, tokens }
+  }
 
   const result = await chat.sendMessage(opts.userMessage)
   const response = result.response
@@ -66,6 +82,39 @@ async function callOpenAICompatible(opts: LLMCallOptions): Promise<LLMResult> {
     messages.push({ role: 'system', content: opts.systemPrompt.trim() })
   }
   messages.push({ role: 'user', content: opts.userMessage })
+
+  if (opts.onToken) {
+    // Streaming path
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: opts.model ?? 'gpt-4o-mini', messages,
+        temperature: opts.temperature ?? 0.7, max_tokens: opts.maxTokens ?? 4096,
+        stream: true,
+      }),
+      signal: AbortSignal.timeout(opts.timeout ?? 60000),
+    })
+    if (!res.ok) throw new Error(`OpenAI-compatible API error ${res.status}: ${await res.text()}`)
+    const reader = res.body!.getReader()
+    const dec = new TextDecoder()
+    let text = '', tokens = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      for (const line of dec.decode(value).split('\n')) {
+        const trimmed = line.replace(/^data: /, '').trim()
+        if (!trimmed || trimmed === '[DONE]') continue
+        try {
+          const chunk = JSON.parse(trimmed) as { choices?: Array<{ delta?: { content?: string } }>; usage?: { total_tokens?: number } }
+          const delta = chunk.choices?.[0]?.delta?.content ?? ''
+          if (delta) { opts.onToken(delta); text += delta }
+          if (chunk.usage?.total_tokens) tokens = chunk.usage.total_tokens
+        } catch { /* skip malformed chunk */ }
+      }
+    }
+    return { text, tokens: tokens || Math.ceil(text.length / 4) }
+  }
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -109,6 +158,36 @@ async function callAnthropic(opts: LLMCallOptions): Promise<LLMResult> {
   }
   if (opts.systemPrompt?.trim()) {
     body.system = opts.systemPrompt.trim()
+  }
+
+  if (opts.onToken) {
+    body.stream = true
+    const res = await fetch(`${baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(opts.timeout ?? 60000),
+    })
+    if (!res.ok) throw new Error(`Anthropic API error ${res.status}: ${await res.text()}`)
+    const reader = res.body!.getReader()
+    const dec = new TextDecoder()
+    let text = '', inputTokens = 0, outputTokens = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      for (const line of dec.decode(value).split('\n')) {
+        const trimmed = line.replace(/^data: /, '').trim()
+        if (!trimmed) continue
+        try {
+          const ev = JSON.parse(trimmed) as { type: string; delta?: { type: string; text: string }; usage?: { input_tokens?: number; output_tokens?: number } }
+          if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+            opts.onToken(ev.delta.text); text += ev.delta.text
+          }
+          if (ev.usage) { inputTokens = ev.usage.input_tokens ?? inputTokens; outputTokens = ev.usage.output_tokens ?? outputTokens }
+        } catch { /* skip */ }
+      }
+    }
+    return { text, tokens: (inputTokens + outputTokens) || Math.ceil(text.length / 4) }
   }
 
   const res = await fetch(`${baseUrl}/v1/messages`, {

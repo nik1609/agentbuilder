@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { X, Brain, Wrench, GitBranch, UserCheck, ChevronDown, Plus, Trash2, Shield, Database, Search, Globe, ArrowRightLeft } from 'lucide-react'
+import { X, Brain, Wrench, GitBranch, UserCheck, HelpCircle, ChevronDown, Plus, Trash2, Shield, Database, Search, Globe, ArrowRightLeft, RefreshCw, GitFork, Merge, ToggleLeft } from 'lucide-react'
+import { v4 as uuidv4 } from 'uuid'
 import { NodeData, MemorySource } from '@/types/agent'
 import { useRegistry } from '@/lib/hooks/useRegistry'
 
@@ -29,6 +30,11 @@ const NODE_META: Record<string, { color: string; bg: string; icon: React.Element
   tool:        { color: '#22d79a', bg: 'rgba(34,215,154,0.1)',  icon: Wrench,         label: 'Tool Node' },
   condition:   { color: '#f5a020', bg: 'rgba(245,160,32,0.1)',  icon: GitBranch,      label: 'Condition Node' },
   hitl:        { color: '#b080f8', bg: 'rgba(176,128,248,0.1)', icon: UserCheck,      label: 'HITL Node' },
+  clarify:     { color: '#f472b6', bg: 'rgba(244,114,182,0.1)', icon: HelpCircle,    label: 'Clarify Node' },
+  loop:        { color: '#ff7043', bg: 'rgba(255,112,67,0.1)',  icon: RefreshCw,      label: 'Loop Node' },
+  fork:        { color: '#26c6da', bg: 'rgba(38,198,218,0.1)',  icon: GitFork,        label: 'Fork Node' },
+  join:        { color: '#26c6da', bg: 'rgba(38,198,218,0.1)',  icon: Merge,          label: 'Join Node' },
+  switch:      { color: '#ffd600', bg: 'rgba(255,214,0,0.1)',   icon: ToggleLeft,     label: 'Switch Node' },
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -64,6 +70,47 @@ function headersToRows(h: Record<string, string>): HeaderRow[] {
   return rows.length ? rows : [{ key: '', value: '' }]
 }
 
+function RetryConfig({ color, bg, enabled, maxAttempts, backoffMs, retryOn, onToggle, onMax, onBackoff, onRetryOn }: {
+  color: string; bg: string; enabled: boolean; maxAttempts: string; backoffMs: string; retryOn: 'error' | 'empty_output' | 'guardrail_block'
+  onToggle: (v: boolean) => void; onMax: (v: string) => void; onBackoff: (v: string) => void; onRetryOn: (v: 'error' | 'empty_output' | 'guardrail_block') => void
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: enabled ? '7px 7px 0 0' : 7, background: enabled ? bg : 'var(--bg)', border: `1px solid ${enabled ? color + '50' : 'var(--border)'}`, borderBottom: enabled ? 'none' : undefined }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>Auto-Retry</div>
+          <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>Retry on failure with exponential backoff</div>
+        </div>
+        <button onClick={() => onToggle(!enabled)} style={{ width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', position: 'relative', background: enabled ? color : 'var(--border)', padding: 0, flexShrink: 0 }}>
+          <span style={{ position: 'absolute', width: 13, height: 13, borderRadius: '50%', background: '#fff', top: 2.5, left: enabled ? 16 : 3, transition: 'left 0.2s' }} />
+        </button>
+      </div>
+      {enabled && (
+        <div style={{ padding: '10px', borderRadius: '0 0 7px 7px', background: bg, border: `1px solid ${color}50`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Max attempts</div>
+              <input value={maxAttempts} onChange={e => onMax(e.target.value)} type="number" min={1} max={10} style={{ width: '100%', padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, outline: 'none' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Backoff (ms)</div>
+              <input value={backoffMs} onChange={e => onBackoff(e.target.value)} type="number" min={100} step={100} style={{ width: '100%', padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, outline: 'none' }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Retry on</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {([{ v: 'error', label: 'Error' }, { v: 'empty_output', label: 'Empty output' }] as const).map(({ v, label }) => (
+                <button key={v} onClick={() => onRetryOn(v)} style={{ flex: 1, padding: '5px', borderRadius: 5, border: `1px solid ${retryOn === v ? color : 'var(--border)'}`, background: retryOn === v ? color + '20' : 'var(--bg)', color: retryOn === v ? color : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 700 }}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, onClose, onAfterToolSave }: NodeConfigPanelProps) {
   const { items: tools, saving: toolSaving, update: updateTool, create: createTool } = useRegistry<Tool>('/api/tools')
   const { items: prompts }      = useRegistry<Prompt>('/api/prompts')
@@ -75,6 +122,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   const [label, setLabel]               = useState(nodeData.label)
   const [model, setModel]               = useState(nodeData.model ?? '')
   const [temperature, setTemperature]   = useState(String(nodeData.temperature ?? 0.7))
+  const [maxTokens, setMaxTokens]       = useState(String(nodeData.maxTokens ?? ''))
   const [systemPrompt, setSystemPrompt] = useState(nodeData.systemPrompt ?? '')
   const [selectedPromptId, setSelectedPromptId] = useState('')
   const [guardrailId, setGuardrailId]   = useState((nodeData.guardrailId as string) ?? '')
@@ -82,6 +130,44 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   const [toolName, setToolName]         = useState(nodeData.toolName ?? '')
   const [condition, setCondition]       = useState(nodeData.condition ?? '')
   const [question, setQuestion]         = useState(nodeData.question ?? '')
+
+  // Agentic mode (LLM node)
+  const [agenticMode, setAgenticMode]   = useState(!!(nodeData.agenticMode))
+  const [boundTools, setBoundTools]     = useState<string[]>((nodeData.boundTools as string[] | undefined) ?? [])
+
+  // Retry config (LLM + tool nodes)
+  const _retry = nodeData.retry as { enabled?: boolean; maxAttempts?: number; backoffMs?: number; retryOn?: string } | undefined
+  const [retryEnabled, setRetryEnabled]   = useState(_retry?.enabled ?? false)
+  const [retryMax, setRetryMax]           = useState(String(_retry?.maxAttempts ?? 3))
+  const [retryBackoff, setRetryBackoff]   = useState(String(_retry?.backoffMs ?? 1000))
+  const [retryOn, setRetryOn]             = useState<'error' | 'empty_output' | 'guardrail_block'>((_retry?.retryOn as 'error' | 'empty_output' | 'guardrail_block') ?? 'error')
+
+  // Loop node state
+  const [loopMaxIter, setLoopMaxIter]         = useState(String(nodeData.maxIterations ?? 5))
+  const [loopExitCond, setLoopExitCond]       = useState((nodeData.exitCondition as string) ?? '')
+  const [loopExitType, setLoopExitType]       = useState((nodeData.exitConditionType as string) ?? 'expression')
+  const [loopOnMax, setLoopOnMax]             = useState((nodeData.onMaxReached as string) ?? 'continue')
+  const [loopModel, setLoopModel]             = useState((nodeData.model as string) ?? '')
+
+  // Fork node state
+  const [forkBranches, setForkBranches]       = useState<{id: string; label: string}[]>((nodeData.branches as {id: string; label: string}[]) ?? [{ id: uuidv4(), label: 'Branch A' }, { id: uuidv4(), label: 'Branch B' }])
+  const [forkInputMode, setForkInputMode]     = useState((nodeData.inputMode as string) ?? 'broadcast')
+
+  // Join node state
+  const [joinMode, setJoinMode]               = useState((nodeData.joinMode as string) ?? 'wait_all')
+  const [joinMergeFormat, setJoinMergeFormat] = useState((nodeData.mergeFormat as string) ?? 'array')
+  const [joinMergeAs, setJoinMergeAs]         = useState((nodeData.mergeAs as string) ?? '')
+
+  // Switch node state
+  const [switchType, setSwitchType]           = useState((nodeData.switchType as string) ?? 'value_match')
+  const [switchInputKey, setSwitchInputKey]   = useState((nodeData.inputKey as string) ?? '')
+  const [switchCases, setSwitchCases]         = useState<{label: string; match: string}[]>((nodeData.cases as {label: string; match: string}[]) ?? [{ label: 'Case A', match: '' }, { label: 'Case B', match: '' }])
+  const [switchDefault, setSwitchDefault]     = useState((nodeData.defaultCase as string) ?? '')
+  const [switchModel, setSwitchModel]         = useState((nodeData.model as string) ?? '')
+
+  // Clarify node state
+  const [clarifySystemPrompt, setClarifySystemPrompt] = useState((nodeData.clarifySystemPrompt as string) ?? '')
+  const [clarifyModel, setClarifyModel]               = useState((nodeData.model as string) ?? '')
 
   // Inline tool editor state — seed from inline toolConfig saved on node data
   const _inlineCfg = nodeData.toolConfig as Record<string, unknown> | undefined
@@ -276,15 +362,10 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
         {nodeData.nodeType === 'llm' && (<>
           <Field label="Model Config">
             <div style={{ position: 'relative' }}>
-              {modelConfigs.length === 0 ? (
-                <select disabled style={{ ...selectStyle, color: 'var(--text3)' }}>
-                  <option>{model || 'Loading models…'}</option>
-                </select>
-              ) : (
-                <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-                </select>
-              )}
+              <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                <option value="">Default (Gemini 2.5 Flash)</option>
+                {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
+              </select>
               <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
             </div>
           </Field>
@@ -297,6 +378,70 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
               </span>
             </div>
           </Field>
+
+          <Field label="Max Tokens (optional)">
+            <input value={maxTokens} onChange={e => { setMaxTokens(e.target.value); onUpdate({ maxTokens: e.target.value ? parseInt(e.target.value) : undefined }) }} type="number" min={1} max={128000} style={{ ...inputStyle, width: 120, fontSize: 11 }} placeholder="default" />
+          </Field>
+
+          {/* Agentic mode */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 7, background: agenticMode ? 'rgba(124,111,240,0.08)' : 'var(--bg)', border: `1px solid ${agenticMode ? 'rgba(124,111,240,0.3)' : 'var(--border)'}` }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>Agentic Mode</div>
+              <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>LLM auto-calls tools in a loop until it stops</div>
+            </div>
+            <button onClick={() => { const n = !agenticMode; setAgenticMode(n); onUpdate({ agenticMode: n }) }} style={{ width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', position: 'relative', background: agenticMode ? 'var(--blue)' : 'var(--border)', padding: 0, flexShrink: 0 }}>
+              <span style={{ position: 'absolute', width: 13, height: 13, borderRadius: '50%', background: '#fff', top: 2.5, left: agenticMode ? 16 : 3, transition: 'left 0.2s' }} />
+            </button>
+          </div>
+
+          {/* Bound Tools — only shown when agentic mode is on */}
+          {agenticMode && (
+            <Field label="Bound Tools">
+              {/* Selected tools chips */}
+              {boundTools.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                  {boundTools.map(t => (
+                    <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, background: 'rgba(124,111,240,0.12)', border: '1px solid rgba(124,111,240,0.3)', fontSize: 11, color: 'var(--blue)' }}>
+                      <Wrench size={9} />
+                      <span>{t}</span>
+                      <button
+                        onClick={() => { const n = boundTools.filter(x => x !== t); setBoundTools(n); onUpdate({ boundTools: n }) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', display: 'flex', padding: 0, marginLeft: 2 }}
+                      >
+                        <X size={9} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Tool picker */}
+              <div style={{ position: 'relative' }}>
+                <select
+                  value=""
+                  onChange={e => {
+                    const val = e.target.value
+                    if (!val || boundTools.includes(val)) return
+                    const n = [...boundTools, val]
+                    setBoundTools(n)
+                    onUpdate({ boundTools: n })
+                  }}
+                  style={{ ...selectStyle }}
+                >
+                  <option value="">+ Add tool…</option>
+                  {tools.filter(t => !boundTools.includes(t.name)).map(t => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))}
+                  {/* Built-in agentic tools */}
+                  {!boundTools.includes('web_search') && <option value="web_search">web_search (built-in)</option>}
+                  {!boundTools.includes('web_scrape') && <option value="web_scrape">web_scrape (built-in)</option>}
+                </select>
+                <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 4, lineHeight: 1.5 }}>
+                The LLM will decide when and how to call these tools. Only web_search and web_scrape are fully supported today.
+              </div>
+            </Field>
+          )}
 
           {/* Guardrail */}
           <Field label="Guardrail">
@@ -386,6 +531,14 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
             )}
             <textarea value={systemPrompt} onChange={e => { setSystemPrompt(e.target.value); onUpdate({ systemPrompt: e.target.value }) }} rows={6} placeholder="You are a helpful assistant..." style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6, minHeight: 96 }} />
           </Field>
+
+          {/* Retry */}
+          <RetryConfig color={meta.color} bg={meta.bg} enabled={retryEnabled} maxAttempts={retryMax} backoffMs={retryBackoff} retryOn={retryOn}
+            onToggle={v => { setRetryEnabled(v); onUpdate({ retry: { enabled: v, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn } }) }}
+            onMax={v => { setRetryMax(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(v) || 3, backoffMs: parseInt(retryBackoff), retryOn } }) }}
+            onBackoff={v => { setRetryBackoff(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(v) || 1000, retryOn } }) }}
+            onRetryOn={v => { setRetryOn(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn: v } }) }}
+          />
         </>)}
 
         {/* Passthrough / I/O node config */}
@@ -588,22 +741,24 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
           <button onClick={saveToolEdits} disabled={toolSaving} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, width: '100%', padding: '7px 0', borderRadius: 7, border: 'none', background: toolSaved ? 'rgba(34,215,154,0.15)' : 'rgba(34,215,154,0.2)', color: toolSaved ? '#22d79a' : '#22d79a', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
             {toolSaved ? '✓ Saved' : toolSaving ? 'Saving…' : (toolName ? 'Save Tool Changes' : 'Create & Assign Tool')}
           </button>
+
+          {/* Retry */}
+          <RetryConfig color="#22d79a" bg="rgba(34,215,154,0.08)" enabled={retryEnabled} maxAttempts={retryMax} backoffMs={retryBackoff} retryOn={retryOn}
+            onToggle={v => { setRetryEnabled(v); onUpdate({ retry: { enabled: v, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn } }) }}
+            onMax={v => { setRetryMax(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(v) || 3, backoffMs: parseInt(retryBackoff), retryOn } }) }}
+            onBackoff={v => { setRetryBackoff(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(v) || 1000, retryOn } }) }}
+            onRetryOn={v => { setRetryOn(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn: v } }) }}
+          />
         </>)}
 
         {/* Condition config */}
         {nodeData.nodeType === 'condition' && (<>
           <Field label="Evaluator Model">
             <div style={{ position: 'relative' }}>
-              {modelConfigs.length === 0 ? (
-                <select disabled style={{ ...selectStyle, color: 'var(--text3)' }}>
-                  <option>Loading models…</option>
-                </select>
-              ) : (
-                <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                  <option value="">— use any available —</option>
-                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-                </select>
-              )}
+              <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                <option value="">Default (Gemini 2.5 Flash)</option>
+                {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
+              </select>
               <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
             </div>
           </Field>
@@ -623,6 +778,198 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
           <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(176,128,248,0.08)', border: '1px solid rgba(176,128,248,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
             Pipeline pauses here. Resume via dashboard or API.
           </div>
+        </>)}
+
+        {/* Clarify config */}
+        {nodeData.nodeType === 'clarify' && (<>
+          <Field label="Question Model">
+            <div style={{ position: 'relative' }}>
+              <select value={clarifyModel} onChange={e => { setClarifyModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                <option value="">Default (first configured model)</option>
+                {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
+              </select>
+              <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+            </div>
+          </Field>
+          <Field label="System Prompt (optional)">
+            <textarea
+              value={clarifySystemPrompt}
+              onChange={e => { setClarifySystemPrompt(e.target.value); onUpdate({ clarifySystemPrompt: e.target.value }) }}
+              rows={4}
+              placeholder="You are a helpful assistant. Based on the context, ask ONE concise clarifying question to better understand what the user needs."
+              style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
+            />
+          </Field>
+          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(244,114,182,0.08)', border: '1px solid rgba(244,114,182,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
+            LLM generates a question from context. Flow pauses until the user replies in chat. The answer is injected into the next node&apos;s input.
+          </div>
+        </>)}
+
+        {/* Loop config */}
+        {nodeData.nodeType === 'loop' && (<>
+          <Field label="Max Iterations">
+            <input type="number" min={1} max={100} value={loopMaxIter} onChange={e => { setLoopMaxIter(e.target.value); onUpdate({ maxIterations: parseInt(e.target.value) || 5 }) }} style={{ ...inputStyle, width: 100 }} />
+          </Field>
+          <Field label="Exit Condition Type">
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['expression', 'llm'] as const).map(t => (
+                <button key={t} onClick={() => { setLoopExitType(t); onUpdate({ exitConditionType: t }) }} style={{ flex: 1, padding: '6px', borderRadius: 6, border: `1px solid ${loopExitType === t ? '#ff7043' : 'var(--border)'}`, background: loopExitType === t ? 'rgba(255,112,67,0.1)' : 'var(--bg)', color: loopExitType === t ? '#ff7043' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, textTransform: 'capitalize' }}>
+                  {t === 'expression' ? 'JS Expression' : 'LLM Evaluate'}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Exit Condition">
+            <textarea value={loopExitCond} onChange={e => { setLoopExitCond(e.target.value); onUpdate({ exitCondition: e.target.value }) }} rows={3} placeholder={loopExitType === 'llm' ? 'The output is a complete, valid answer' : 'output.includes("DONE") || iteration >= 3'} style={{ ...inputStyle, resize: 'vertical', fontSize: 11, fontFamily: loopExitType === 'expression' ? 'monospace' : 'inherit', lineHeight: 1.6 }} />
+          </Field>
+          {loopExitType === 'llm' && (
+            <Field label="Evaluator Model">
+              <div style={{ position: 'relative' }}>
+                <select value={loopModel} onChange={e => { setLoopModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                  <option value="">Default (first configured model)</option>
+                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
+                </select>
+                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+              </div>
+            </Field>
+          )}
+          <Field label="On Max Reached">
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[{ v: 'continue', label: 'Continue' }, { v: 'error', label: 'Error' }].map(({ v, label: lbl }) => (
+                <button key={v} onClick={() => { setLoopOnMax(v); onUpdate({ onMaxReached: v as 'continue' | 'error' }) }} style={{ flex: 1, padding: '6px', borderRadius: 6, border: `1px solid ${loopOnMax === v ? '#ff7043' : 'var(--border)'}`, background: loopOnMax === v ? 'rgba(255,112,67,0.1)' : 'var(--bg)', color: loopOnMax === v ? '#ff7043' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(255,112,67,0.06)', border: '1px solid rgba(255,112,67,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
+            Connect loop body below this node. Connect the last body node back to the <strong style={{ color: '#ff7043' }}>left handle</strong> to form the loop. Exit condition is checked after each iteration.
+          </div>
+        </>)}
+
+        {/* Fork config */}
+        {nodeData.nodeType === 'fork' && (<>
+          <Field label="Input Mode">
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[{ v: 'broadcast', label: 'Broadcast (copy to all)' }, { v: 'split', label: 'Split (distribute array)' }].map(({ v, label: lbl }) => (
+                <button key={v} onClick={() => { setForkInputMode(v); onUpdate({ inputMode: v as 'broadcast' | 'split' }) }} style={{ flex: 1, padding: '5px 4px', borderRadius: 6, border: `1px solid ${forkInputMode === v ? '#26c6da' : 'var(--border)'}`, background: forkInputMode === v ? 'rgba(38,198,218,0.1)' : 'var(--bg)', color: forkInputMode === v ? '#26c6da' : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 700 }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Branches">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {forkBranches.map((b, idx) => (
+                <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <input value={b.label} onChange={e => {
+                    const updated = forkBranches.map((x, i) => i === idx ? { ...x, label: e.target.value } : x)
+                    setForkBranches(updated); onUpdate({ branches: updated })
+                  }} style={{ ...inputStyle, flex: 1, fontSize: 11 }} placeholder={`Branch ${idx + 1}`} />
+                  {forkBranches.length > 2 && (
+                    <button onClick={() => {
+                      const updated = forkBranches.filter((_, i) => i !== idx)
+                      setForkBranches(updated); onUpdate({ branches: updated })
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0 }}><Trash2 size={11} /></button>
+                  )}
+                </div>
+              ))}
+              <button onClick={() => {
+                const updated = [...forkBranches, { id: uuidv4(), label: `Branch ${forkBranches.length + 1}` }]
+                setForkBranches(updated); onUpdate({ branches: updated })
+              }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>
+                <Plus size={10} /> Add branch
+              </button>
+            </div>
+          </Field>
+          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(38,198,218,0.06)', border: '1px solid rgba(38,198,218,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
+            Connect each branch handle to a separate node chain. All branches run in parallel. Connect them to a Join node to collect results.
+          </div>
+        </>)}
+
+        {/* Join config */}
+        {nodeData.nodeType === 'join' && (<>
+          <Field label="Merge Format">
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[{ v: 'array', label: '[ ] Array' }, { v: 'object', label: '{ } Object' }, { v: 'concatenated', label: '… Text' }].map(({ v, label: lbl }) => (
+                <button key={v} onClick={() => { setJoinMergeFormat(v); onUpdate({ mergeFormat: v as 'array' | 'object' | 'concatenated' }) }} style={{ flex: 1, padding: '5px 4px', borderRadius: 6, border: `1px solid ${joinMergeFormat === v ? '#26c6da' : 'var(--border)'}`, background: joinMergeFormat === v ? 'rgba(38,198,218,0.1)' : 'var(--bg)', color: joinMergeFormat === v ? '#26c6da' : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 700 }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Join Mode">
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[{ v: 'wait_all', label: 'All' }, { v: 'wait_first', label: 'First' }].map(({ v, label: lbl }) => (
+                <button key={v} onClick={() => { setJoinMode(v); onUpdate({ joinMode: v as 'wait_all' | 'wait_first' }) }} style={{ flex: 1, padding: '5px 4px', borderRadius: 6, border: `1px solid ${joinMode === v ? '#26c6da' : 'var(--border)'}`, background: joinMode === v ? 'rgba(38,198,218,0.1)' : 'var(--bg)', color: joinMode === v ? '#26c6da' : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 700 }}>
+                  Wait {lbl}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Save as variable (optional)">
+            <input value={joinMergeAs} onChange={e => { setJoinMergeAs(e.target.value); onUpdate({ mergeAs: e.target.value || undefined }) }} style={{ ...inputStyle, fontSize: 11 }} placeholder="e.g. branch_results" />
+            <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 3 }}>Access via {'{{state.branch_results}}'} in downstream nodes</div>
+          </Field>
+        </>)}
+
+        {/* Switch config */}
+        {nodeData.nodeType === 'switch' && (<>
+          <Field label="Switch Type">
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[{ v: 'value_match', label: 'Match' }, { v: 'expression', label: 'Expr' }, { v: 'llm_classify', label: 'LLM' }].map(({ v, label: lbl }) => (
+                <button key={v} onClick={() => { setSwitchType(v); onUpdate({ switchType: v as 'value_match' | 'llm_classify' | 'expression' }) }} style={{ flex: 1, padding: '6px', borderRadius: 6, border: `1px solid ${switchType === v ? '#ffd600' : 'var(--border)'}`, background: switchType === v ? 'rgba(255,214,0,0.1)' : 'var(--bg)', color: switchType === v ? '#ffd600' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </Field>
+          {switchType === 'llm_classify' && (
+            <Field label="Classifier Model">
+              <div style={{ position: 'relative' }}>
+                <select value={switchModel} onChange={e => { setSwitchModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                  <option value="">Default (first configured model)</option>
+                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
+                </select>
+              </div>
+            </Field>
+          )}
+          {switchType !== 'llm_classify' && (
+            <Field label="Input Key (optional)">
+              <input value={switchInputKey} onChange={e => { setSwitchInputKey(e.target.value); onUpdate({ inputKey: e.target.value || undefined }) }} style={{ ...inputStyle, fontSize: 11 }} placeholder="e.g. sentiment (from {{input.sentiment}})" />
+            </Field>
+          )}
+          <Field label="Cases">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {switchCases.map((c, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                  <input value={c.label} onChange={e => {
+                    const updated = switchCases.map((x, i) => i === idx ? { ...x, label: e.target.value } : x)
+                    setSwitchCases(updated); onUpdate({ cases: updated })
+                  }} style={{ ...inputStyle, flex: 1, fontSize: 10, padding: '5px 7px' }} placeholder="Label" />
+                  <input value={c.match} onChange={e => {
+                    const updated = switchCases.map((x, i) => i === idx ? { ...x, match: e.target.value } : x)
+                    setSwitchCases(updated); onUpdate({ cases: updated })
+                  }} style={{ ...inputStyle, flex: 2, fontSize: 10, padding: '5px 7px', fontFamily: switchType === 'expression' ? 'monospace' : 'inherit' }} placeholder={switchType === 'expression' ? 'value === "yes"' : switchType === 'llm_classify' ? 'Category name' : 'match value'} />
+                  {switchCases.length > 2 && (
+                    <button onClick={() => {
+                      const updated = switchCases.filter((_, i) => i !== idx)
+                      setSwitchCases(updated); onUpdate({ cases: updated })
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0 }}><Trash2 size={11} /></button>
+                  )}
+                </div>
+              ))}
+              <button onClick={() => {
+                const updated = [...switchCases, { label: `Case ${switchCases.length + 1}`, match: '' }]
+                setSwitchCases(updated); onUpdate({ cases: updated })
+              }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>
+                <Plus size={10} /> Add case
+              </button>
+            </div>
+          </Field>
+          <Field label="Default Case Label">
+            <input value={switchDefault} onChange={e => { setSwitchDefault(e.target.value); onUpdate({ defaultCase: e.target.value || undefined }) }} style={{ ...inputStyle, fontSize: 11 }} placeholder="e.g. Default (connects via bottom handle)" />
+          </Field>
         </>)}
       </div>
     </div>

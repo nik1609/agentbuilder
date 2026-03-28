@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 /**
  * Agent Run Endpoint — the core feature
  *
@@ -13,6 +15,7 @@ import { executeAgent } from '@/lib/executor/dag-executor'
 import { getUserFromSession, getUserFromApiKey, hashApiKey } from '@/lib/auth'
 import { GuardrailData, AgentRunsHistory } from '@/lib/executor/types'
 import { MemorySource } from '@/types/agent'
+import { estimateCost } from '@/lib/cost'
 import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(
@@ -52,6 +55,9 @@ export async function POST(
 
   const effectiveUserId = resolvedUserId ?? agent.user_id
   const schema = agent.schema as { nodes: Array<{ data: Record<string, unknown> }>; edges: unknown[] }
+  // Inject agent identity for the orchestrator (runtime-only, not persisted)
+  ;(schema as Record<string, unknown>)._agentName = agent.name
+  ;(schema as Record<string, unknown>)._agentDescription = (agent as { description?: string }).description ?? ''
 
   // ── 3. Load model configs ─────────────────────────────────────────────────
   const modelConfigs: Record<string, { provider: 'google' | 'openai-compatible' | 'anthropic' | 'ollama'; modelId: string; apiKey?: string; baseUrl?: string }> = {}
@@ -211,6 +217,10 @@ export async function POST(
   }
 
   // ── 10. Execute agent ─────────────────────────────────────────────────────
+  // Determine primary model ID for cost estimation
+  const primaryModelName = schema?.nodes?.find(n => n.data.nodeType === 'llm')?.data?.model as string | undefined
+  const primaryModelId = primaryModelName ? modelConfigs[primaryModelName]?.modelId : undefined
+
   let result
   try {
     result = await executeAgent(schema as never, input, agentId, runId, undefined, undefined, modelConfigs, guardrailMap, agentRunsHistory, datatableImportData, datatableWriter)
@@ -226,17 +236,30 @@ export async function POST(
     tokens: result.tokens, latency_ms: result.latencyMs,
     error: result.error ?? null, trace: result.trace,
   }).eq('id', runId)
+  // cost_usd is best-effort — column may not exist in all deployments
+  const costUsd = estimateCost(result.tokens, primaryModelId)
+  if (costUsd > 0) {
+    await db.from('agent_runs').update({ cost_usd: costUsd }).eq('id', runId)
+  }
 
   if (keyRecord) {
     await db.from('api_keys').update({ total_calls: (keyRecord.total_calls ?? 0) + 1, last_used: new Date().toISOString() }).eq('id', keyRecord.id)
   }
   await db.from('agents').update({ run_count: (agent.run_count ?? 0) + 1 }).eq('id', agentId)
 
+  const hitlUrls = result.status === 'waiting_hitl' ? {
+    approveUrl: `/api/runs/${runId}/hitl/approve`,
+    rejectUrl: `/api/runs/${runId}/hitl/reject`,
+    messagesUrl: `/api/runs/${runId}/hitl`,
+    resumeUrl: `/api/runs/${runId}/resume`,
+  } : undefined
+
   return NextResponse.json({
     runId, agentId, agentName: agent.name,
     output: result.output, status: result.status,
     tokens: result.tokens, latencyMs: result.latencyMs,
     trace: result.trace, error: result.error ?? null,
+    ...(hitlUrls && { hitlUrls }),
   })
 }
 
@@ -330,55 +353,94 @@ export async function GET(
 
   const url = new URL(req.url)
   const message = url.searchParams.get('message') ?? ''
+  // Compact conversation history sent by the chat page for orchestrator context
+  const conversationHistory = url.searchParams.get('history') ?? ''
   const runId = uuidv4()
   const encoder = new TextEncoder()
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (data: object) => {
-        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch { /* client disconnected */ }
-      }
-      send({ type: 'start', runId, agentId, agentName: agent.name })
+  // Inject agent identity into schema so the orchestrator can personalize its responses.
+  // These are runtime-only fields — not stored in the DB.
+  const agentMeta = agent as { name: string; description?: string }
+  ;(schema as Record<string, unknown>)._agentName = agentMeta.name
+  ;(schema as Record<string, unknown>)._agentDescription = agentMeta.description ?? ''
 
-      // Create run record up front so resume can find it
-      await db.from('agent_runs').insert({
-        id: runId, agent_id: agentId, agent_name: agent.name,
-        api_key_prefix: isTestMode ? 'test' : 'stream',
-        input: { message }, status: 'running', trace: [],
-        created_at: new Date().toISOString(),
-        user_id: effectiveUserId ?? null,
-      })
-
-      try {
-        const result = await executeAgent(schema as never, { message }, agentId, runId, (event) => send({ type: 'trace', event }), undefined, modelConfigs, undefined, undefined, sseDatatableImportData, sseDatatableWriter)
-
-        await db.from('agent_runs').update({
-          output: result.output as object ?? null, status: result.status,
-          tokens: result.tokens, latency_ms: result.latencyMs,
-          error: result.error ?? null, trace: result.trace,
-        }).eq('id', runId)
-
-        // For HITL: send a dedicated pause event so the client knows to call /resume
-        if (result.status === 'waiting_hitl') {
-          const hitlOutput = result.output as { checkpoint?: string; partial?: unknown } | null
-          send({ type: 'hitl_pause', runId, checkpoint: hitlOutput?.checkpoint, partial: hitlOutput?.partial,
-            message: 'Agent paused — POST to /api/runs/' + runId + '/resume to continue' })
-        }
-
-        send({ type: 'done', runId, output: result.output, tokens: result.tokens, latencyMs: result.latencyMs, status: result.status, error: result.error ?? null })
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        await db.from('agent_runs').update({ status: 'failed', error: msg }).eq('id', runId)
-        send({ type: 'error', message: msg })
-      }
-      controller.close()
-    },
+  // Critical: start() must be synchronous. When start() is async, WHATWG ReadableStream
+  // buffers ALL enqueued chunks until the start Promise resolves — nothing reaches the
+  // client until the whole response is done (no real-time streaming).
+  // Fix: synchronous start stores the controller, async work runs in a void IIFE.
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) { ctrl = controller },
+    cancel() {},
   })
+
+  const send = (data: object) => {
+    try { ctrl.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch { /* client disconnected */ }
+  }
+
+  // Run execution in the background — Response is returned immediately so the stream
+  // is open and the client starts reading before any data is written.
+  void (async () => {
+    send({ type: 'start', runId, agentId, agentName: agent.name })
+
+    // Create run record up front so resume can find it
+    await db.from('agent_runs').insert({
+      id: runId, agent_id: agentId, agent_name: agent.name,
+      api_key_prefix: isTestMode ? 'test' : 'stream',
+      input: { message }, status: 'running', trace: [],
+      created_at: new Date().toISOString(),
+      user_id: effectiveUserId ?? null,
+    })
+
+    try {
+      // Include conversation history for orchestrator context; prefixed with _ so workflow nodes ignore it
+      const sseInput: Record<string, unknown> = { message }
+      if (conversationHistory) sseInput._conversationHistory = conversationHistory
+
+      const result = await executeAgent(
+        schema as never, sseInput, agentId, runId,
+        (event) => send({ type: 'trace', event }),
+        undefined, modelConfigs, undefined, undefined,
+        sseDatatableImportData, sseDatatableWriter,
+        (nodeId, token) => send({ type: 'token', nodeId, token })
+      )
+
+      await db.from('agent_runs').update({
+        output: result.output as object ?? null, status: result.status,
+        tokens: result.tokens, latency_ms: result.latencyMs,
+        error: result.error ?? null, trace: result.trace,
+      }).eq('id', runId)
+
+      // For HITL/Clarify: send pause event; do NOT send done so the client blocks until resumed
+      if (result.status === 'waiting_hitl') {
+        const hitlOutput = result.output as { checkpoint?: string; partial?: unknown } | null
+        send({ type: 'hitl_pause', runId, checkpoint: hitlOutput?.checkpoint, partial: hitlOutput?.partial,
+          message: 'Agent paused — POST to /api/runs/' + runId + '/resume to continue' })
+      } else if (result.status === 'waiting_clarify') {
+        const clarifyOutput = result.output as { question?: string; checkpoint?: string; partial?: unknown } | null
+        send({ type: 'clarify_pause', runId, checkpoint: clarifyOutput?.checkpoint, question: clarifyOutput?.question, partial: clarifyOutput?.partial,
+          message: 'Agent paused — POST to /api/runs/' + runId + '/clarify to continue' })
+      } else {
+        // Send nudge before done so the client can render it as a follow-up message
+        if (result.nudge) send({ type: 'nudge', message: result.nudge })
+        send({ type: 'done', runId, output: result.output, tokens: result.tokens, latencyMs: result.latencyMs, status: result.status, error: result.error ?? null })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      await db.from('agent_runs').update({ status: 'failed', error: msg }).eq('id', runId)
+      send({ type: 'error', message: msg })
+    }
+    try { ctrl.close() } catch { /* already closed */ }
+  })()
 
   return new Response(stream, {
     headers: {
-      'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'Content-Encoding': 'none',
+      'Access-Control-Allow-Origin': '*',
     },
   })
 }

@@ -1,10 +1,18 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { BarChart3, CheckCircle, XCircle, Zap, Clock, TrendingUp } from 'lucide-react'
+import { BarChart3, CheckCircle, XCircle, Zap, Clock, TrendingUp, DollarSign } from 'lucide-react'
 
 interface Run {
   id: string; agent_name: string; status: string; tokens: number
-  latency_ms: number; created_at: string; api_key_prefix: string; error?: string
+  latency_ms: number; cost_usd?: number; created_at: string; api_key_prefix: string; error?: string
+}
+
+function formatCost(usd: number): string {
+  if (usd <= 0) return '$0.00'
+  if (usd < 0.001) return '<$0.001'
+  if (usd < 0.01) return `$${usd.toFixed(4)}`
+  if (usd < 1) return `$${usd.toFixed(3)}`
+  return `$${usd.toFixed(2)}`
 }
 
 export default function AnalyticsPage() {
@@ -22,6 +30,7 @@ export default function AnalyticsPage() {
   const failed = runs.filter(r => r.status === 'failed')
   const successRate = runs.length ? Math.round((completed.length / runs.length) * 100) : 0
   const totalTokens = runs.reduce((s, r) => s + (r.tokens || 0), 0)
+  const totalCost = runs.reduce((s, r) => s + (r.cost_usd || 0), 0)
   const avgLatency = completed.length
     ? Math.round(completed.reduce((s, r) => s + (r.latency_ms || 0), 0) / completed.length)
     : 0
@@ -37,18 +46,20 @@ export default function AnalyticsPage() {
 
   const byAgent = Object.entries(
     runs.reduce((acc, r) => {
-      if (!acc[r.agent_name]) acc[r.agent_name] = { runs: 0, tokens: 0, errors: 0 }
+      if (!acc[r.agent_name]) acc[r.agent_name] = { runs: 0, tokens: 0, cost: 0, errors: 0 }
       acc[r.agent_name].runs++
       acc[r.agent_name].tokens += r.tokens || 0
+      acc[r.agent_name].cost += r.cost_usd || 0
       if (r.status === 'failed') acc[r.agent_name].errors++
       return acc
-    }, {} as Record<string, { runs: number; tokens: number; errors: number }>)
+    }, {} as Record<string, { runs: number; tokens: number; cost: number; errors: number }>)
   ).sort((a, b) => b[1].runs - a[1].runs)
 
   const stats = [
     { label: 'Total Runs', value: runs.length, icon: Zap, color: '#7c6ff0', bg: 'rgba(124,111,240,0.1)' },
     { label: 'Success Rate', value: `${successRate}%`, icon: CheckCircle, color: '#22d79a', bg: 'rgba(34,215,154,0.1)' },
     { label: 'Total Tokens', value: totalTokens > 999 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens, icon: BarChart3, color: '#b080f8', bg: 'rgba(176,128,248,0.1)' },
+    { label: 'Est. Cost', value: formatCost(totalCost), icon: DollarSign, color: '#22d79a', bg: 'rgba(34,215,154,0.1)' },
     { label: 'Avg Latency', value: `${avgLatency}ms`, icon: Clock, color: '#f5a020', bg: 'rgba(245,160,32,0.1)' },
   ]
 
@@ -62,7 +73,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 32 }}>
         {stats.map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} style={{ padding: 24, borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -125,6 +136,7 @@ export default function AnalyticsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{name}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {s.cost > 0 && <span style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'monospace' }}>{formatCost(s.cost)}</span>}
                     <span style={{ fontSize: 11, color: 'var(--text3)' }}>{s.tokens.toLocaleString()} tok</span>
                     <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'monospace', color: 'var(--blue)' }}>{s.runs}</span>
                   </div>

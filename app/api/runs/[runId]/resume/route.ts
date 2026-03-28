@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { getUserId } from '@/lib/auth'
 import { executeAgent } from '@/lib/executor/dag-executor'
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ runId: string }> }
 ) {
+  const userId = await getUserId(req)
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { runId } = await params
   const db = createAdminClient()
   const startTime = Date.now()
@@ -15,6 +19,7 @@ export async function POST(
     .from('agent_runs')
     .select('*')
     .eq('id', runId)
+    .eq('user_id', userId)
     .single()
 
   if (runError || !run) {
@@ -26,7 +31,15 @@ export async function POST(
 
   // ── 2. Parse resume body ──────────────────────────────────────────────────
   const body = await req.json().catch(() => ({}))
+  const approved: boolean = body.approved !== false  // default true if not specified
   const feedback: string | undefined = body.feedback?.trim() || undefined
+
+  // If rejected, short-circuit and return a rejection result
+  if (!approved) {
+    const rejectionMsg = feedback ? `Rejected by reviewer: ${feedback}` : 'Rejected by reviewer.'
+    await db.from('agent_runs').update({ status: 'completed', output: { rejected: true, message: rejectionMsg }, error: null }).eq('id', runId)
+    return NextResponse.json({ runId, agentId: run.agent_id, output: { rejected: true, message: rejectionMsg }, status: 'completed', tokens: run.tokens ?? 0, latencyMs: run.latency_ms ?? 0, trace: [] })
+  }
 
   // ── 3. Load agent schema ──────────────────────────────────────────────────
   const { data: agent, error: agentError } = await db
