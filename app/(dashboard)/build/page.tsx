@@ -168,25 +168,11 @@ export default function BuildPage() {
     setImportingIdx(msgIdx)
     setError('')
 
-    // Build step list
     const steps: ImportStep[] = [
       ...plan.tools.map(t => ({ label: `Create tool: ${t.name}`, status: 'pending' as const })),
       ...plan.datatables.map(d => ({ label: `Create datatable: ${d.name}`, status: 'pending' as const })),
       { label: `Create agent: ${plan.name}`, status: 'pending' as const },
     ]
-    // Validate toolName references before doing anything
-    const toolNames = new Set(plan.tools.map(t => t.name))
-    const nodes = (plan.schema?.nodes ?? []) as { type?: string; data?: { toolName?: string } }[]
-    const badRefs = nodes
-      .filter(n => n.type === 'tool' && n.data?.toolName && !toolNames.has(n.data.toolName))
-      .map(n => n.data!.toolName!)
-    if (badRefs.length > 0) {
-      setImportingIdx(null)
-      setImportSteps([])
-      setError(`Tool name mismatch: node references "${badRefs.join('", "')}" but plan tools are [${[...toolNames].map(n => `"${n}"`).join(', ')}]. Ask the assistant to fix and regenerate.`)
-      return
-    }
-
     setImportSteps(steps)
 
     const setStep = (i: number, status: ImportStep['status']) => {
@@ -215,13 +201,14 @@ export default function BuildPage() {
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({})) as { error?: string }
-          throw new Error(`Tool "${tool.name}": ${err.error ?? 'failed'}`)
+          throw new Error(`Tool "${tool.name}": ${err.error ?? res.status}`)
         }
         setStep(stepIdx, 'done')
         stepIdx++
       }
 
-      // 2. Create datatables
+      // 2. Create datatables — and wire datatable_id into any tools + schema nodes that reference them by name
+      const datatableIdMap: Record<string, string> = {}
       for (const dt of plan.datatables) {
         setStep(stepIdx, 'active')
         const res = await fetch('/api/datatables', {
@@ -231,27 +218,51 @@ export default function BuildPage() {
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({})) as { error?: string }
-          throw new Error(`Datatable "${dt.name}": ${err.error ?? 'failed'}`)
+          throw new Error(`Datatable "${dt.name}": ${err.error ?? res.status}`)
         }
+        const created = await res.json() as { id: string }
+        datatableIdMap[dt.name] = created.id
         setStep(stepIdx, 'done')
         stepIdx++
       }
 
-      // 3. Create agent
+      // Patch schema: inject datatable_id into tool nodes whose inputSchema references a datatable by name
+      const patchedSchema = JSON.parse(JSON.stringify(plan.schema)) as typeof plan.schema
+      const schemaNodes = (patchedSchema?.nodes ?? []) as Array<{ type?: string; data?: Record<string, unknown> }>
+      for (const node of schemaNodes) {
+        if (node.type === 'tool' && node.data) {
+          const cfg = node.data.toolConfig as Record<string, unknown> | undefined
+          const sch = (cfg?.input_schema ?? node.data.inputSchema) as Record<string, unknown> | undefined
+          const refName = sch?.datatable_name as string | undefined
+          if (refName && datatableIdMap[refName]) {
+            if (cfg) {
+              (cfg.input_schema as Record<string, unknown>).datatable_id = datatableIdMap[refName]
+            } else {
+              node.data.toolConfig = {
+                ...(node.data.toolConfig as object ?? {}),
+                type: 'datatable',
+                input_schema: { ...(sch ?? {}), datatable_id: datatableIdMap[refName] },
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Create agent with patched schema
       setStep(stepIdx, 'active')
       const res = await fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: plan.name, description: plan.description ?? '', schema: plan.schema }),
+        body: JSON.stringify({ name: plan.name, description: plan.description ?? '', schema: patchedSchema }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(err.error ?? 'Agent creation failed')
+        throw new Error(err.error ?? `Agent creation failed (${res.status})`)
       }
       const created = await res.json() as { id: string }
       setStep(stepIdx, 'done')
 
-      await new Promise(r => setTimeout(r, 600)) // brief pause so user sees all green
+      await new Promise(r => setTimeout(r, 600))
       router.push(`/builder/${created.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed')

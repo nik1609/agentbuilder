@@ -96,26 +96,37 @@ Edges use sourceHandle matching the branch label.
 With handles: { "id": "e2", "source": "n-cond", "target": "n-llm-yes", "sourceHandle": "true" }
 
 ## Tool definitions
-Include a tool when the agent needs web search, web scrape, or HTTP calls.
+Include tools in tools[] for anything the agent needs to call externally.
 
-Web search (Tavily):
+### Web search (Tavily — recommended)
 { "name": "Tavily Search", "description": "Search the web", "type": "web_search", "inputSchema": { "provider": "tavily", "api_key": "", "max_results": 5 } }
 
-Web search (Serper/Google):
+### Web search (Serper/Google)
 { "name": "Serper Search", "description": "Google search", "type": "web_search", "inputSchema": { "provider": "serper", "api_key": "", "max_results": 5 } }
 
-Web scrape:
+### Web scrape
 { "name": "Web Scraper", "description": "Extract text from URLs", "type": "web_scrape", "inputSchema": { "api_key": "" } }
 
-HTTP tool:
+### HTTP / webhook call
 { "name": "Slack Notifier", "description": "Post to Slack", "type": "http", "method": "POST", "endpoint": "https://hooks.slack.com/...", "headers": { "Content-Type": "application/json" }, "inputSchema": { "body_template": "{\"text\": \"{{last_output}}\"}" } }
 
-Note: api_key fields are left empty — the user fills them in after import.
+### Datatable — write rows (export)
+Use this when the agent should save/log data to a table.
+{ "name": "Log to Results", "description": "Save results to datatable", "type": "datatable", "inputSchema": { "datatable_name": "Results Log", "mode": "export", "columns": [{ "name": "result", "type": "text" }, { "name": "created_at", "type": "date" }] } }
+datatable_name MUST exactly match a name in datatables[].
+
+### Datatable — read rows (import)
+Use this when the agent should query/retrieve data from a table.
+{ "name": "Read Customer Data", "description": "Read rows from datatable", "type": "datatable", "inputSchema": { "datatable_name": "Customer Records", "mode": "import", "columns": [{ "name": "id", "type": "text" }, { "name": "name", "type": "text" }] } }
+
+Note: api_key and endpoint fields are left empty — user fills in after import.
 
 ## Datatable definitions
-Include a datatable when the agent needs to store rows or retrieve structured data.
-{ "name": "Customer Records", "description": "Stores customer info", "columns": [{ "name": "id", "type": "text", "isPrimaryKey": true }, { "name": "name", "type": "text" }, { "name": "email", "type": "text" }, { "name": "status", "type": "text" }] }
+Always define datatables in datatables[] when the agent reads/writes structured data.
+{ "name": "Results Log", "description": "Stores run results", "columns": [{ "name": "id", "type": "text", "isPrimaryKey": true }, { "name": "result", "type": "text" }, { "name": "created_at", "type": "date" }] }
 Column types: text, number, boolean, date
+- Always include a primary key column (isPrimaryKey: true)
+- datatable_name in datatable tools must EXACTLY match name in datatables[]
 
 ## Final output format
 Put the build plan at the END of your message in a single \`\`\`json block:
@@ -142,7 +153,9 @@ Rules:
 - ALWAYS include exactly one input and one output node.
 - Every node must be reachable from input; every path must reach output.
 - Write detailed, task-specific system prompts for LLM nodes.
-- toolName in tool nodes must EXACTLY match the name in tools[].`
+- toolName in tool nodes must EXACTLY match the name field in tools[].
+- datatable_name in datatable tool inputSchema must EXACTLY match the name in datatables[].
+- When an agent both reads AND writes a datatable, create two separate tools (one mode: import, one mode: export) referencing the same datatable_name.`
 
 export async function POST(req: NextRequest) {
   const userId = await getUserFromSession()
