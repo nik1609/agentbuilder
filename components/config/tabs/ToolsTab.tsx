@@ -218,7 +218,7 @@ export default function ToolsTab() {
             </Field>
             {form.provider !== 'duckduckgo' && (
               <Field label="API Key">
-                <input value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder={form.provider === 'tavily' ? 'tvly-...' : 'your-serper-key'} />
+                <input type="password" value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder={form.provider === 'tavily' ? 'tvly-...' : 'your-serper-key'} />
               </Field>
             )}
             <Field label="Max Results">
@@ -232,7 +232,7 @@ export default function ToolsTab() {
           {/* Web Scrape */}
           {form.type === 'web_scrape' && (<>
             <Field label="Jina API Key (optional — higher rate limit)">
-              <input value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="jina_..." />
+              <input type="password" value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="jina_..." />
             </Field>
             <div style={{ fontSize: 10, color: 'var(--text3)', padding: '6px 8px', borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border2)', marginBottom: 10, lineHeight: 1.5 }}>
               Uses the previous node&apos;s output as the URL to scrape via jina.ai/reader.
@@ -256,7 +256,7 @@ export default function ToolsTab() {
             )}
             {form.codeProvider === 'e2b' && (
               <Field label="E2B API Key">
-                <input value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="e2b_..." />
+                <input type="password" value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="e2b_..." />
               </Field>
             )}
             <Field label="Language">

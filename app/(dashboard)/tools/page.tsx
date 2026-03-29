@@ -409,7 +409,7 @@ export default function ToolsPage() {
                 <Label>API Key {SEARCH_PROVIDERS.find(p => p.value === searchForm.provider)?.link && (
                   <a href={SEARCH_PROVIDERS.find(p => p.value === searchForm.provider)?.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', fontWeight: 400, marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>Get free key <ExternalLink size={9} /></a>
                 )}</Label>
-                <input value={searchForm.api_key} onChange={e => setSearchForm(f => ({ ...f, api_key: e.target.value }))} style={inputStyle} placeholder={searchForm.provider === 'tavily' ? 'tvly-...' : 'your-serper-key'} />
+                <input type="password" value={searchForm.api_key} onChange={e => setSearchForm(f => ({ ...f, api_key: e.target.value }))} style={inputStyle} placeholder={searchForm.provider === 'tavily' ? 'tvly-...' : 'your-serper-key'} />
               </div>
             )}
             <div>
@@ -425,7 +425,7 @@ export default function ToolsPage() {
           {formType === 'web_scrape' && (<>
             <div style={{ marginBottom: 14 }}>
               <Label>Jina API Key (optional — higher rate limit)</Label>
-              <input value={scrapeForm.api_key} onChange={e => setScrapeForm(f => ({ ...f, api_key: e.target.value }))} style={inputStyle} placeholder="jina_..." />
+              <input type="password" value={scrapeForm.api_key} onChange={e => setScrapeForm(f => ({ ...f, api_key: e.target.value }))} style={inputStyle} placeholder="jina_..." />
               <a href="https://jina.ai/reader" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: 'var(--blue)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                 Get key at jina.ai/reader <ExternalLink size={9} />
               </a>
@@ -458,7 +458,7 @@ export default function ToolsPage() {
             {codeForm.code_provider === 'e2b' && (
               <div style={{ marginBottom: 14 }}>
                 <Label>E2B API Key <a href="https://e2b.dev" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', fontWeight: 400, marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>Get key <ExternalLink size={9} /></a></Label>
-                <input value={codeForm.api_key} onChange={e => setCodeForm(f => ({ ...f, api_key: e.target.value }))} style={inputStyle} placeholder="e2b_..." />
+                <input type="password" value={codeForm.api_key} onChange={e => setCodeForm(f => ({ ...f, api_key: e.target.value }))} style={inputStyle} placeholder="e2b_..." />
               </div>
             )}
             <div style={{ marginBottom: 14 }}>

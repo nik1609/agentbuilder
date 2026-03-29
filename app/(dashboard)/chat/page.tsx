@@ -1,6 +1,8 @@
 'use client'
 import { Suspense, useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
+
+export const dynamic = 'force-dynamic'
 import { Send, Bot, MessageSquare, Trash2, Loader2, ChevronDown, ThumbsUp, HelpCircle, AlertCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'

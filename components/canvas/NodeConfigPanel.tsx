@@ -635,7 +635,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
             </Field>
             {toolProvider !== 'duckduckgo' && (
               <Field label="API Key">
-                <input value={toolApiKey} onChange={e => setToolApiKey(e.target.value)} style={inputStyle} placeholder={toolProvider === 'tavily' ? 'tvly-...' : 'your-serper-key'} />
+                <input type="password" value={toolApiKey} onChange={e => setToolApiKey(e.target.value)} style={inputStyle} placeholder={toolProvider === 'tavily' ? 'tvly-...' : 'your-serper-key'} />
               </Field>
             )}
             <Field label="Max Results">
@@ -649,7 +649,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
           {/* Web scrape fields */}
           {toolType === 'web_scrape' && (<>
             <Field label="Jina API Key (optional)">
-              <input value={toolApiKey} onChange={e => setToolApiKey(e.target.value)} style={inputStyle} placeholder="jina_..." />
+              <input type="password" value={toolApiKey} onChange={e => setToolApiKey(e.target.value)} style={inputStyle} placeholder="jina_..." />
             </Field>
             <div style={{ fontSize: 10, color: 'var(--text3)', padding: '6px 8px', borderRadius: 6, background: 'rgba(34,215,154,0.06)', border: '1px solid rgba(34,215,154,0.15)' }}>
               Uses prev node output as the URL to scrape via jina.ai/reader.
