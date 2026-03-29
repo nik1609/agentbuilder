@@ -5,6 +5,7 @@ import {
   addEdge, Connection, useNodesState, useEdgesState, Node, Edge,
   NodeChange, EdgeChange, ConnectionMode, ReactFlowInstance,
 } from '@xyflow/react'
+import { Undo2, Redo2 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import LLMNode from './nodes/LLMNode'
 import ToolNode from './nodes/ToolNode'
@@ -94,28 +95,80 @@ export default function AgentCanvas({
     }, 300)
   }, [onSchemaChange])
 
+  // ── Undo / Redo ────────────────────────────────────────────────────────────
+  const pastRef   = useRef<{ nodes: Node[]; edges: Edge[] }[]>([])
+  const futureRef = useRef<{ nodes: Node[]; edges: Edge[] }[]>([])
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
+
+  const snapshot = useCallback(() => {
+    pastRef.current = [...pastRef.current.slice(-49), { nodes: nodesRef.current, edges: edgesRef.current }]
+    futureRef.current = []
+    setCanUndo(true)
+    setCanRedo(false)
+  }, [])
+
+  const undo = useCallback(() => {
+    if (pastRef.current.length === 0) return
+    const prev = pastRef.current[pastRef.current.length - 1]
+    pastRef.current = pastRef.current.slice(0, -1)
+    futureRef.current = [{ nodes: nodesRef.current, edges: edgesRef.current }, ...futureRef.current.slice(0, 49)]
+    setNodes(prev.nodes)
+    setEdges(prev.edges)
+    scheduleSync(prev.nodes, prev.edges)
+    setCanUndo(pastRef.current.length > 0)
+    setCanRedo(true)
+  }, [setNodes, setEdges, scheduleSync])
+
+  const redo = useCallback(() => {
+    if (futureRef.current.length === 0) return
+    const next = futureRef.current[0]
+    futureRef.current = futureRef.current.slice(1)
+    pastRef.current = [...pastRef.current.slice(-49), { nodes: nodesRef.current, edges: edgesRef.current }]
+    setNodes(next.nodes)
+    setEdges(next.edges)
+    scheduleSync(next.nodes, next.edges)
+    setCanUndo(true)
+    setCanRedo(futureRef.current.length > 0)
+  }, [setNodes, setEdges, scheduleSync])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+      if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); redo() }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [undo, redo])
+
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    const hasRemove = changes.some(c => c.type === 'remove')
     const filtered = changes.filter(c => {
       if (c.type !== 'remove') return true
       const node = nodesRef.current.find(n => n.id === c.id)
       return node?.type !== 'input' && node?.type !== 'output'
     })
+    if (hasRemove && filtered.some(c => c.type === 'remove')) snapshot()
     onNodesChange(filtered)
     setNodes(nds => {
       scheduleSync(nds, edgesRef.current)
       return nds
     })
-  }, [onNodesChange, setNodes, scheduleSync])
+  }, [onNodesChange, setNodes, scheduleSync, snapshot])
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    if (changes.some(c => c.type === 'remove')) snapshot()
     onEdgesChange(changes)
     setEdges(eds => {
       scheduleSync(nodesRef.current, eds)
       return eds
     })
-  }, [onEdgesChange, setEdges, scheduleSync])
+  }, [onEdgesChange, setEdges, scheduleSync, snapshot])
 
   const onConnect = useCallback((params: Connection) => {
+    snapshot()
     setEdges(eds => {
       const newEdges = addEdge({
         ...params,
@@ -127,7 +180,7 @@ export default function AgentCanvas({
       scheduleSync(nodesRef.current, newEdges)
       return newEdges
     })
-  }, [setEdges, scheduleSync])
+  }, [setEdges, scheduleSync, snapshot])
 
   const addNode = useCallback((type: 'llm' | 'tool' | 'condition' | 'hitl' | 'clarify' | 'passthrough' | 'loop' | 'fork' | 'join' | 'switch') => {
     const labels: Record<string, string> = {
@@ -176,12 +229,13 @@ export default function AgentCanvas({
       position: pos,
       data: { label: labels[type], nodeType: type, ...(defaults[type] ?? {}) } as NodeData,
     }
+    snapshot()
     setNodes(nds => {
       const updated = [...nds, newNode]
       scheduleSync(updated, edgesRef.current)
       return updated
     })
-  }, [setNodes, scheduleSync])
+  }, [setNodes, scheduleSync, snapshot])
 
   const addNodeAt = useCallback((type: Parameters<typeof addNode>[0], position: { x: number; y: number }) => {
     const labels: Record<string, string> = {
@@ -200,12 +254,13 @@ export default function AgentCanvas({
       position,
       data: { label: labels[type], nodeType: type, ...(defaults[type] ?? {}) } as NodeData,
     }
+    snapshot()
     setNodes(nds => {
       const updated = [...nds, newNode]
       scheduleSync(updated, edgesRef.current)
       return updated
     })
-  }, [setNodes, scheduleSync])
+  }, [setNodes, scheduleSync, snapshot])
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault()
@@ -222,6 +277,7 @@ export default function AgentCanvas({
 
   // Update node data (from config panel)
   const updateNodeData = useCallback((nodeId: string, data: Partial<NodeData>) => {
+    snapshot()
     setNodes(nds => {
       const updated = nds.map(n =>
         n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
@@ -229,7 +285,7 @@ export default function AgentCanvas({
       scheduleSync(updated, edgesRef.current)
       return updated
     })
-  }, [setNodes, scheduleSync])
+  }, [setNodes, scheduleSync, snapshot])
 
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
   const selectedNodeData = selectedNode?.data as NodeData | undefined
@@ -244,6 +300,29 @@ export default function AgentCanvas({
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, padding: '5px 8px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
         }} onMouseDown={e => e.stopPropagation()}>
+          {/* Undo / Redo */}
+          <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)" style={{
+            height: 30, width: 30, borderRadius: 7, border: '1px solid var(--border)',
+            background: canUndo ? 'var(--surface2)' : 'transparent',
+            color: canUndo ? 'var(--text)' : 'var(--text3)',
+            cursor: canUndo ? 'pointer' : 'default',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: canUndo ? 1 : 0.4,
+          }}>
+            <Undo2 size={13} />
+          </button>
+          <button onClick={redo} disabled={!canRedo} title="Redo (⌘⇧Z)" style={{
+            height: 30, width: 30, borderRadius: 7, border: '1px solid var(--border)',
+            background: canRedo ? 'var(--surface2)' : 'transparent',
+            color: canRedo ? 'var(--text)' : 'var(--text3)',
+            cursor: canRedo ? 'pointer' : 'default',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: canRedo ? 1 : 0.4,
+            marginRight: 6,
+          }}>
+            <Redo2 size={13} />
+          </button>
+          <div style={{ width: 1, height: 18, background: 'var(--border)', marginRight: 4 }} />
           <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.06em', marginRight: 4 }}>ADD</span>
           {[
             { type: 'passthrough' as const, label: 'I/O', color: '#64b5f6', bg: 'rgba(100,181,246,0.12)' },
@@ -284,6 +363,7 @@ export default function AgentCanvas({
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
+          onNodeDragStart={snapshot}
           onNodeClick={(_, node) => {
             setSelectedNodeId(node.id)
             onNodeSelect?.(node.id, node.data as NodeData)
