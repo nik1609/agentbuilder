@@ -31,11 +31,12 @@ export async function POST(
 
   // ── 2. Parse resume body ──────────────────────────────────────────────────
   const body = await req.json().catch(() => ({}))
-  const approved: boolean = body.approved !== false  // default true if not specified
+  const approved: boolean = body.approved !== false
   const feedback: string | undefined = body.feedback?.trim() || undefined
+  const action: string | undefined = body.action  // 'approve' | 'revise' | undefined
 
-  // If rejected, short-circuit and return a rejection result
-  if (!approved) {
+  // Hard reject (no feedback, just stop)
+  if (!approved && action !== 'revise') {
     const rejectionMsg = feedback ? `Rejected by reviewer: ${feedback}` : 'Rejected by reviewer.'
     await db.from('agent_runs').update({ status: 'completed', output: { rejected: true, message: rejectionMsg }, error: null }).eq('id', runId)
     return NextResponse.json({ runId, agentId: run.agent_id, output: { rejected: true, message: rejectionMsg }, status: 'completed', tokens: run.tokens ?? 0, latencyMs: run.latency_ms ?? 0, trace: [] })
@@ -126,7 +127,7 @@ export async function POST(
   }
 
   // ── 6. Extract checkpoint info from saved run output ──────────────────────
-  const savedOutput = run.output as { checkpoint?: string; partial?: unknown } | null
+  const savedOutput = run.output as { checkpoint?: string; partial?: unknown; question?: string } | null
   const checkpointNodeId = savedOutput?.checkpoint
   const partialOutput = savedOutput?.partial ?? run.input
 
@@ -134,14 +135,31 @@ export async function POST(
     return NextResponse.json({ error: 'No checkpoint found in run output' }, { status: 400 })
   }
 
-  // ── 7. Resume execution ───────────────────────────────────────────────────
+  // ── 7. Determine resume checkpoint (approve = continue forward, revise = loop back to preceding node) ──
+  let resumeCheckpoint = checkpointNodeId
+  let resumeFeedback = feedback
+
+  if (action === 'revise') {
+    // Find the node that feeds INTO the HITL checkpoint and re-run from there
+    const edges = (schema as { nodes: unknown[]; edges: Array<{ source: string; target: string }> }).edges
+    const incomingEdge = edges.find(e => e.target === checkpointNodeId)
+    if (!incomingEdge) {
+      return NextResponse.json({ error: 'Cannot find preceding node to revise from' }, { status: 400 })
+    }
+    resumeCheckpoint = incomingEdge.source
+    resumeFeedback = feedback
+      ? `The reviewer requested changes: "${feedback}"\n\nPrevious version to revise:\n${typeof partialOutput === 'string' ? partialOutput : JSON.stringify(partialOutput)}`
+      : `The reviewer requested a revision. Please improve the previous output:\n${typeof partialOutput === 'string' ? partialOutput : JSON.stringify(partialOutput)}`
+  }
+
+  // ── 8. Resume execution ───────────────────────────────────────────────────
   const result = await executeAgent(
     schema as never,
     run.input as Record<string, unknown>,
     run.agent_id,
     runId,
     undefined,
-    { checkpointNodeId, partialOutput, feedback },
+    { checkpointNodeId: resumeCheckpoint, partialOutput, feedback: resumeFeedback },
     modelConfigs,
     undefined,
     undefined,

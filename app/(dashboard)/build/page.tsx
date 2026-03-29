@@ -1,19 +1,28 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Send, Wand2, Bot, User, ArrowRight, AlertCircle } from 'lucide-react'
+import { Send, Wand2, User, ArrowRight, AlertCircle, Wrench, Table2, CheckCircle } from 'lucide-react'
 
 interface Model { id: string; name: string; provider: string; model_id: string }
 interface Message { role: 'user' | 'assistant'; content: string }
-interface AgentJson { name: string; description?: string; schema: { nodes: unknown[]; edges: unknown[] } }
+interface ToolDef { name: string; description?: string; type: string; method?: string; endpoint?: string; headers?: Record<string, string>; inputSchema?: Record<string, unknown> }
+interface DatatableDef { name: string; description?: string; columns: { name: string; type: string; isPrimaryKey?: boolean }[] }
+interface BuildPlan {
+  name: string
+  description?: string
+  tools: ToolDef[]
+  datatables: DatatableDef[]
+  schema: { nodes: unknown[]; edges: unknown[] }
+}
+type ImportStep = { label: string; status: 'pending' | 'done' | 'active' }
 
-const WELCOME = `Hi! I'm your agent design assistant. Tell me what you want to build and I'll design the flow and generate importable JSON for you.
+const WELCOME = `Hi! I'm your agent design assistant. Describe what you want to build and I'll design the full flow — including any tools (web search, HTTP) and datatables you need — then generate everything in one click.
 
-A few examples to get started:
-- "Build an agent that searches the web and summarises the results"
-- "I need to classify customer support emails and route them to the right team"
-- "Draft a blog post, then wait for my review before publishing"
-- "An agent that generates a report, critiques it, and improves it 3 times"
+A few examples:
+- "Search the web for AI news daily and summarise it"
+- "Classify support emails, auto-reply to simple ones, escalate complex ones for review"
+- "Ask me for my spending details, then summarise and log them to a table"
+- "Research a competitor, score them, and draft a report — wait for my approval before finishing"
 
 What would you like to build?`
 
@@ -31,10 +40,16 @@ function parseContent(text: string) {
   return parts
 }
 
-function tryExtractAgent(code: string): AgentJson | null {
+function tryExtractPlan(code: string): BuildPlan | null {
   try {
     const p = JSON.parse(code)
-    if (p?.name && Array.isArray(p?.schema?.nodes) && p.schema.nodes.length > 0) return p as AgentJson
+    if (p?.name && Array.isArray(p?.schema?.nodes) && p.schema.nodes.length > 0) {
+      return {
+        ...p,
+        tools: Array.isArray(p.tools) ? p.tools : [],
+        datatables: Array.isArray(p.datatables) ? p.datatables : [],
+      } as BuildPlan
+    }
   } catch { /* not valid JSON */ }
   return null
 }
@@ -61,6 +76,7 @@ export default function BuildPage() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [importingIdx, setImportingIdx] = useState<number | null>(null)
+  const [importSteps, setImportSteps] = useState<ImportStep[]>([])
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -147,27 +163,86 @@ export default function BuildPage() {
     }
   }
 
-  const importAgent = async (msgIdx: number, agent: AgentJson) => {
+  const importPlan = async (msgIdx: number, plan: BuildPlan) => {
     setImportingIdx(msgIdx)
+    setError('')
+
+    // Build step list
+    const steps: ImportStep[] = [
+      ...plan.tools.map(t => ({ label: `Create tool: ${t.name}`, status: 'pending' as const })),
+      ...plan.datatables.map(d => ({ label: `Create datatable: ${d.name}`, status: 'pending' as const })),
+      { label: `Create agent: ${plan.name}`, status: 'pending' as const },
+    ]
+    setImportSteps(steps)
+
+    const setStep = (i: number, status: ImportStep['status']) => {
+      setImportSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status } : s))
+    }
+
     try {
+      let stepIdx = 0
+
+      // 1. Create tools
+      for (const tool of plan.tools) {
+        setStep(stepIdx, 'active')
+        const res = await fetch('/api/tools', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: tool.name,
+            description: tool.description ?? '',
+            type: tool.type,
+            method: tool.method ?? 'GET',
+            endpoint: tool.endpoint ?? '',
+            headers: tool.headers ?? {},
+            inputSchema: tool.inputSchema ?? {},
+            timeout: 10000,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: string }
+          throw new Error(`Tool "${tool.name}": ${err.error ?? 'failed'}`)
+        }
+        setStep(stepIdx, 'done')
+        stepIdx++
+      }
+
+      // 2. Create datatables
+      for (const dt of plan.datatables) {
+        setStep(stepIdx, 'active')
+        const res = await fetch('/api/datatables', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: dt.name, description: dt.description ?? '', columns: dt.columns }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: string }
+          throw new Error(`Datatable "${dt.name}": ${err.error ?? 'failed'}`)
+        }
+        setStep(stepIdx, 'done')
+        stepIdx++
+      }
+
+      // 3. Create agent
+      setStep(stepIdx, 'active')
       const res = await fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: agent.name,
-          description: agent.description ?? '',
-          schema: agent.schema,
-        }),
+        body: JSON.stringify({ name: plan.name, description: plan.description ?? '', schema: plan.schema }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(err.error ?? 'Import failed')
+        throw new Error(err.error ?? 'Agent creation failed')
       }
       const created = await res.json() as { id: string }
+      setStep(stepIdx, 'done')
+
+      await new Promise(r => setTimeout(r, 600)) // brief pause so user sees all green
       router.push(`/builder/${created.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed')
       setImportingIdx(null)
+      setImportSteps([])
     }
   }
 
@@ -261,38 +336,71 @@ export default function BuildPage() {
                   }
 
                   // Code block
-                  const agentJson = part.lang === 'json' ? tryExtractAgent(part.value) : null
+                  const plan = part.lang === 'json' ? tryExtractPlan(part.value) : null
+                  const isImporting = importingIdx === idx
 
                   return (
-                    <div key={pi} style={{ marginBottom: pi < parts.length - 1 ? 8 : 0, borderRadius: 12, border: `1px solid ${agentJson ? 'rgba(124,111,240,0.4)' : 'var(--border)'}`, overflow: 'hidden', background: 'var(--surface)' }}>
+                    <div key={pi} style={{ marginBottom: pi < parts.length - 1 ? 8 : 0, borderRadius: 12, border: `1px solid ${plan ? 'rgba(124,111,240,0.4)' : 'var(--border)'}`, overflow: 'hidden', background: 'var(--surface)' }}>
                       {/* Code block header */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: agentJson ? 'rgba(124,111,240,0.08)' : 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {agentJson && (
-                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)' }} />
-                          )}
-                          <span style={{ fontSize: 10, fontFamily: 'monospace', color: agentJson ? 'var(--blue)' : 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                            {agentJson ? 'Agent JSON — ready to import' : (part.lang || 'code')}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: plan ? 'rgba(124,111,240,0.08)' : 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {plan && <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)' }} />}
+                          <span style={{ fontSize: 10, fontFamily: 'monospace', color: plan ? 'var(--blue)' : 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                            {plan ? 'Build Plan — ready to deploy' : (part.lang || 'code')}
                           </span>
+                          {plan && (plan.tools.length > 0 || plan.datatables.length > 0) && (
+                            <div style={{ display: 'flex', gap: 5 }}>
+                              {plan.tools.length > 0 && (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#22d79a', background: 'rgba(34,215,154,0.1)', border: '1px solid rgba(34,215,154,0.2)', borderRadius: 5, padding: '1px 6px' }}>
+                                  <Wrench size={9} /> {plan.tools.length} tool{plan.tools.length > 1 ? 's' : ''}
+                                </span>
+                              )}
+                              {plan.datatables.length > 0 && (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#f5a020', background: 'rgba(245,160,32,0.1)', border: '1px solid rgba(245,160,32,0.2)', borderRadius: 5, padding: '1px 6px' }}>
+                                  <Table2 size={9} /> {plan.datatables.length} datatable{plan.datatables.length > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {agentJson && (
+                        {plan && (
                           <button
-                            onClick={() => importAgent(idx, agentJson)}
-                            disabled={importingIdx === idx}
+                            onClick={() => importPlan(idx, plan)}
+                            disabled={isImporting}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 5,
                               padding: '5px 12px', borderRadius: 7, border: 'none',
-                              background: importingIdx === idx ? 'var(--surface2)' : 'var(--blue)',
-                              color: importingIdx === idx ? 'var(--text3)' : '#fff',
+                              background: isImporting ? 'var(--surface2)' : 'var(--blue)',
+                              color: isImporting ? 'var(--text3)' : '#fff',
                               fontSize: 12, fontWeight: 600,
-                              cursor: importingIdx === idx ? 'not-allowed' : 'pointer',
+                              cursor: isImporting ? 'not-allowed' : 'pointer',
                             }}
                           >
                             <ArrowRight size={12} />
-                            {importingIdx === idx ? 'Importing…' : 'Open in Builder'}
+                            {isImporting ? 'Building…' : 'Build it'}
                           </button>
                         )}
                       </div>
+
+                      {/* Import progress steps */}
+                      {isImporting && importSteps.length > 0 && (
+                        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          {importSteps.map((step, si) => (
+                            <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                              {step.status === 'done'
+                                ? <CheckCircle size={12} color="#22d79a" />
+                                : step.status === 'active'
+                                  ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--blue)', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                                  : <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--border)', display: 'inline-block' }} />
+                              }
+                              <span style={{ color: step.status === 'done' ? '#22d79a' : step.status === 'active' ? 'var(--text)' : 'var(--text3)' }}>
+                                {step.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <pre style={{ padding: '14px 18px', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.7, color: 'var(--text2)', overflowX: 'auto', margin: 0, maxHeight: 420, overflowY: 'auto' }}>
                         {part.value}
                       </pre>
@@ -357,6 +465,7 @@ export default function BuildPage() {
           0%, 100% { opacity: 0.3; transform: scale(0.8); }
           50% { opacity: 1; transform: scale(1); }
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
     </div>
   )

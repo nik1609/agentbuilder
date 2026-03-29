@@ -166,6 +166,8 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   const [switchModel, setSwitchModel]         = useState((nodeData.model as string) ?? '')
 
   // Clarify node state
+  const [clarifyMode, setClarifyMode]                 = useState<'static' | 'llm'>((nodeData.clarifyMode as 'static' | 'llm') ?? 'llm')
+  const [staticQuestion, setStaticQuestion]           = useState((nodeData.staticQuestion as string) ?? '')
   const [clarifySystemPrompt, setClarifySystemPrompt] = useState((nodeData.clarifySystemPrompt as string) ?? '')
   const [clarifyModel, setClarifyModel]               = useState((nodeData.model as string) ?? '')
 
@@ -782,27 +784,58 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
 
         {/* Clarify config */}
         {nodeData.nodeType === 'clarify' && (<>
-          <Field label="Question Model">
-            <div style={{ position: 'relative' }}>
-              <select value={clarifyModel} onChange={e => { setClarifyModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                <option value="">Default (first configured model)</option>
-                {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-              </select>
-              <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+          {/* Mode toggle */}
+          <Field label="Mode">
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['static', 'llm'] as const).map(m => (
+                <button key={m} onClick={() => { setClarifyMode(m); onUpdate({ clarifyMode: m }) }} style={{
+                  flex: 1, height: 32, borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  border: `1px solid ${clarifyMode === m ? '#f472b6' : 'var(--border)'}`,
+                  background: clarifyMode === m ? 'rgba(244,114,182,0.12)' : 'var(--surface2)',
+                  color: clarifyMode === m ? '#f472b6' : 'var(--text3)',
+                }}>
+                  {m === 'static' ? 'Fixed Question' : 'LLM Generated'}
+                </button>
+              ))}
             </div>
           </Field>
-          <Field label="System Prompt (optional)">
-            <textarea
-              value={clarifySystemPrompt}
-              onChange={e => { setClarifySystemPrompt(e.target.value); onUpdate({ clarifySystemPrompt: e.target.value }) }}
-              rows={4}
-              placeholder="You are a helpful assistant. Based on the context, ask ONE concise clarifying question to better understand what the user needs."
-              style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
-            />
-          </Field>
-          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(244,114,182,0.08)', border: '1px solid rgba(244,114,182,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
-            LLM generates a question from context. Flow pauses until the user replies in chat. The answer is injected into the next node&apos;s input.
-          </div>
+
+          {clarifyMode === 'static' ? (<>
+            <Field label="Question to ask the user">
+              <textarea
+                value={staticQuestion}
+                onChange={e => { setStaticQuestion(e.target.value); onUpdate({ staticQuestion: e.target.value }) }}
+                rows={3}
+                placeholder="What are your spending details for today?"
+                style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
+              />
+            </Field>
+            <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(244,114,182,0.08)', border: '1px solid rgba(244,114,182,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
+              Shows this exact question to the user. No LLM call. Flow pauses until the user replies in chat.
+            </div>
+          </>) : (<>
+            <Field label="Question Model">
+              <div style={{ position: 'relative' }}>
+                <select value={clarifyModel} onChange={e => { setClarifyModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                  <option value="">Default (first configured model)</option>
+                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
+                </select>
+                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+              </div>
+            </Field>
+            <Field label="System Prompt (optional)">
+              <textarea
+                value={clarifySystemPrompt}
+                onChange={e => { setClarifySystemPrompt(e.target.value); onUpdate({ clarifySystemPrompt: e.target.value }) }}
+                rows={4}
+                placeholder="You are a helpful assistant. Based on the context, ask ONE concise clarifying question to better understand what the user needs."
+                style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
+              />
+            </Field>
+            <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(244,114,182,0.08)', border: '1px solid rgba(244,114,182,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
+              LLM generates a question from context. Flow pauses until the user replies in chat. The answer is injected into the next node&apos;s input.
+            </div>
+          </>)}
         </>)}
 
         {/* Loop config */}

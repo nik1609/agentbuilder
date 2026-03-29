@@ -1279,30 +1279,40 @@ User message: "${userMsg}"`
 
         // ── Clarify ───────────────────────────────────────────────────────────
         case 'clarify': {
-          const modelKey = node.data.model as string | undefined
-          const cfg = (modelKey ? ctx.modelConfigs?.[modelKey] : undefined) ?? Object.values(ctx.modelConfigs ?? {})[0]
-          const sysPrompt = (node.data.clarifySystemPrompt as string | undefined)?.trim()
-            || 'You are a helpful assistant. Based on the context provided, ask ONE concise clarifying question to better understand what the user needs. Reply with only the question.'
-          const { text: question, tokens: clarifyTokens } = await callLLM({
-            provider: (cfg?.provider ?? 'google') as Parameters<typeof callLLM>[0]['provider'],
-            model: cfg?.modelId, apiKey: cfg?.apiKey, baseUrl: cfg?.baseUrl,
-            systemPrompt: sysPrompt,
-            userMessage: `Current context:\n${JSON.stringify(ctx.variables.__last_output)}`,
-            temperature: 0.7, maxTokens: 200,
-          })
-          totalTokens += clarifyTokens ?? 0
+          const clarifyMode = (node.data.clarifyMode as string | undefined) ?? 'llm'
+          let question: string
+
+          if (clarifyMode === 'static') {
+            question = (node.data.staticQuestion as string | undefined)?.trim() || 'Please provide more details.'
+          } else {
+            const modelKey = node.data.model as string | undefined
+            const cfg = (modelKey ? ctx.modelConfigs?.[modelKey] : undefined) ?? Object.values(ctx.modelConfigs ?? {})[0]
+            const sysPrompt = (node.data.clarifySystemPrompt as string | undefined)?.trim()
+              || 'You are a helpful assistant. Based on the context provided, ask ONE concise clarifying question to better understand what the user needs. Reply with only the question.'
+            const { text: q, tokens: clarifyTokens } = await callLLM({
+              provider: (cfg?.provider ?? 'google') as Parameters<typeof callLLM>[0]['provider'],
+              model: cfg?.modelId, apiKey: cfg?.apiKey, baseUrl: cfg?.baseUrl,
+              systemPrompt: sysPrompt,
+              userMessage: `Current context:\n${JSON.stringify(ctx.variables.__last_output)}`,
+              temperature: 0.7, maxTokens: 200,
+            })
+            totalTokens += clarifyTokens ?? 0
+            question = q.trim()
+          }
+
           emit({ type: 'clarify_pause', nodeId: node.id, message: `Clarify checkpoint — waiting for user answer` })
           return {
-            output: { question: question.trim(), checkpoint: node.id, partial: ctx.variables.__last_output },
+            output: { question, checkpoint: node.id, partial: ctx.variables.__last_output },
             tokens: totalTokens, latencyMs: Date.now() - startTime, trace, status: 'waiting_clarify',
           }
         }
 
         // ── HITL ─────────────────────────────────────────────────────────────
         case 'hitl': {
-          emit({ type: 'hitl_pause', nodeId: node.id, message: `HITL checkpoint — waiting for human` })
+          const question = (node.data.question as string | undefined)?.trim() || 'Please review the content above before continuing.'
+          emit({ type: 'hitl_pause', nodeId: node.id, message: question, data: { question } })
           return {
-            output: { message: 'Waiting for human', checkpoint: node.id, partial: ctx.variables.__last_output },
+            output: { question, checkpoint: node.id, partial: ctx.variables.__last_output },
             tokens: totalTokens, latencyMs: Date.now() - startTime, trace, status: 'waiting_hitl',
           }
         }

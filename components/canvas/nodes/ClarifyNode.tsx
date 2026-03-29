@@ -32,10 +32,16 @@ export default function ClarifyNode({ id, data, selected }: NodeProps) {
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
           <NodeIdChip id={id} />
         </div>
-        {d.clarifySystemPrompt && (
+        {d.clarifyMode === 'static' ? (
+          <div style={{ fontSize: 10, color: COLOR, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontStyle: 'italic' }}>
+            &ldquo;{String(d.staticQuestion || 'Please provide more details.').slice(0, 60)}&rdquo;
+          </div>
+        ) : d.clarifySystemPrompt ? (
           <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             {String(d.clarifySystemPrompt).slice(0, 60)}
           </div>
+        ) : (
+          <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4 }}>LLM-generated question</div>
         )}
       </div>
       <Handle type="target" position={Position.Top} title="Input — LLM reads this to generate a clarifying question" style={{ width: 10, height: 10, background: 'var(--surface2)', border: `2px solid ${COLOR}`, top: -6 }} />

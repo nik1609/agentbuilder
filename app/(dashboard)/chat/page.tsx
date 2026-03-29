@@ -16,7 +16,7 @@ interface Message {
   welcome?: boolean
   tokens?: number
   latencyMs?: number
-  hitl?: { runId: string; partial: unknown }
+  hitl?: { runId: string; partial: unknown; question?: string }
   clarify?: { runId: string; partial: unknown }
 }
 
@@ -244,10 +244,14 @@ function ChatContent() {
           accumulated = ''
         }
         const partial = event.partial
+        const question = String(event.question ?? 'Please review before continuing.')
         const partialText = typeof partial === 'string' ? partial
-          : partial ? JSON.stringify(partial, null, 2) : 'Agent paused — waiting for your approval.'
+          : partial ? JSON.stringify(partial, null, 2) : ''
+        const displayContent = partialText
+          ? `${partialText}\n\n---\n**Review required:** ${question}`
+          : `**Review required:** ${question}`
         const runId = String(event.runId ?? '')
-        setMessages(prev => [...prev, { role: 'assistant', content: partialText, hitl: { runId, partial } }])
+        setMessages(prev => [...prev, { role: 'assistant', content: displayContent, hitl: { runId, partial, question } }])
         setPendingAction({ type: 'hitl', runId })
         setLoading(false)
         finish(); return
@@ -337,9 +341,11 @@ function ChatContent() {
         if (!res.ok || data.status === 'failed') {
           setMessages(prev => [...prev, { role: 'assistant', content: data.error ?? 'Resume failed.', error: true }])
         } else if (data.status === 'waiting_hitl') {
-          const out = data.output as { partial?: unknown } | null
-          const text = typeof out?.partial === 'string' ? out.partial : out?.partial ? JSON.stringify(out.partial, null, 2) : 'Paused again.'
-          setMessages(prev => [...prev, { role: 'assistant', content: text, hitl: { runId: String(data.runId ?? runId), partial: out?.partial } }])
+          const out = data.output as { partial?: unknown; question?: string } | null
+          const q = String(out?.question ?? 'Please review before continuing.')
+          const partialText = typeof out?.partial === 'string' ? out.partial : out?.partial ? JSON.stringify(out.partial, null, 2) : ''
+          const displayContent = partialText ? `${partialText}\n\n---\n**Review required:** ${q}` : `**Review required:** ${q}`
+          setMessages(prev => [...prev, { role: 'assistant', content: displayContent, hitl: { runId: String(data.runId ?? runId), partial: out?.partial, question: q } }])
           setPendingAction({ type: 'hitl', runId: String(data.runId ?? runId) })
         } else if (data.status === 'waiting_clarify') {
           const out = data.output as { question?: string; partial?: unknown } | null
@@ -400,25 +406,38 @@ function ChatContent() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
-  const handleReject = async () => {
+  const handleRevise = async () => {
     if (loading || pendingAction?.type !== 'hitl') return
     const { runId } = pendingAction
-    const feedback = input.trim() || undefined
+    const feedback = input.trim()
     setInput('')
     setPendingAction(null)
     setMessages(prev => [
       ...prev.map(m => m.hitl?.runId === runId ? { ...m, hitl: undefined } : m),
-      { role: 'user' as const, content: `✗ Rejected${feedback ? `: "${feedback}"` : ''}` },
+      { role: 'user' as const, content: `↩ Revision requested${feedback ? `: "${feedback}"` : ''}` },
     ])
     setLoading(true)
     try {
-      const res = await fetch(`/api/runs/${runId}/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: false, feedback }) })
+      const res = await fetch(`/api/runs/${runId}/resume`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revise', feedback: feedback || undefined }),
+      })
       const data = await res.json().catch(() => ({ error: `Server error: ${res.status}` }))
-      const output = typeof data.output === 'string' ? data.output
-        : (data.output as { message?: string } | null)?.message ?? data.error ?? 'Rejected.'
-      setMessages(prev => [...prev, { role: 'assistant', content: output }])
+      if (!res.ok || data.status === 'failed') {
+        setMessages(prev => [...prev, { role: 'assistant', content: data.error ?? 'Revision failed.', error: true }])
+      } else if (data.status === 'waiting_hitl') {
+        const out = data.output as { partial?: unknown; question?: string } | null
+        const q = String(out?.question ?? 'Please review before continuing.')
+        const partialText = typeof out?.partial === 'string' ? out.partial : out?.partial ? JSON.stringify(out.partial, null, 2) : ''
+        const displayContent = partialText ? `${partialText}\n\n---\n**Review required:** ${q}` : `**Review required:** ${q}`
+        setMessages(prev => [...prev, { role: 'assistant', content: displayContent, hitl: { runId: String(data.runId ?? runId), partial: out?.partial, question: q } }])
+        setPendingAction({ type: 'hitl', runId: String(data.runId ?? runId) })
+      } else {
+        const output = typeof data.output === 'string' ? data.output : JSON.stringify(data.output, null, 2)
+        setMessages(prev => [...prev, { role: 'assistant', content: output, tokens: data.tokens, latencyMs: data.latencyMs }])
+      }
     } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Network error during reject.', error: true }])
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Network error during revision.', error: true }])
     }
     setLoading(false)
   }
@@ -701,18 +720,18 @@ function ChatContent() {
                 />
                 {pendingAction?.type === 'hitl' && (
                   <button
-                    onClick={handleReject}
+                    onClick={handleRevise}
                     disabled={loading}
-                    title="Reject — stop the workflow"
+                    title="Request Revision — loop back and improve"
                     style={{
                       height: 40, padding: '0 14px', borderRadius: 10, flexShrink: 0,
-                      background: 'rgba(232,85,85,0.12)', border: '1px solid rgba(232,85,85,0.3)',
-                      color: 'var(--red)', fontSize: 12, fontWeight: 700,
+                      background: 'rgba(245,160,32,0.12)', border: '1px solid rgba(245,160,32,0.3)',
+                      color: '#f5a020', fontSize: 12, fontWeight: 700,
                       cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1,
                       transition: 'all 0.15s',
                     }}
                   >
-                    Reject
+                    Request Revision
                   </button>
                 )}
                 <button
@@ -734,7 +753,7 @@ function ChatContent() {
               </div>
               <p style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'center', marginTop: 8 }}>
                 {pendingAction?.type === 'hitl'
-                  ? 'Send to approve · Reject to stop the workflow'
+                  ? 'Send to approve · Request Revision to loop back with feedback'
                   : pendingAction?.type === 'clarify'
                   ? 'Send to answer the agent\'s question'
                   : 'Enter to send · Shift+Enter for new line · Responses stream in real time'}
