@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Send, Wand2, User, ArrowRight, AlertCircle, Wrench, Table2, CheckCircle } from 'lucide-react'
+import { Send, Wand2, User, ArrowRight, AlertCircle, Wrench, Table2, CheckCircle, ExternalLink, Loader2 } from 'lucide-react'
 
 interface Model { id: string; name: string; provider: string; model_id: string }
 interface Message { role: 'user' | 'assistant'; content: string }
@@ -77,6 +77,7 @@ export default function BuildPage() {
   const [streaming, setStreaming] = useState(false)
   const [importingIdx, setImportingIdx] = useState<number | null>(null)
   const [importSteps, setImportSteps] = useState<ImportStep[]>([])
+  const [openingIdx, setOpeningIdx] = useState<number | null>(null)
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -173,6 +174,19 @@ export default function BuildPage() {
       ...plan.datatables.map(d => ({ label: `Create datatable: ${d.name}`, status: 'pending' as const })),
       { label: `Create agent: ${plan.name}`, status: 'pending' as const },
     ]
+    // Validate toolName references before doing anything
+    const toolNames = new Set(plan.tools.map(t => t.name))
+    const nodes = (plan.schema?.nodes ?? []) as { type?: string; data?: { toolName?: string } }[]
+    const badRefs = nodes
+      .filter(n => n.type === 'tool' && n.data?.toolName && !toolNames.has(n.data.toolName))
+      .map(n => n.data!.toolName!)
+    if (badRefs.length > 0) {
+      setImportingIdx(null)
+      setImportSteps([])
+      setError(`Tool name mismatch: node references "${badRefs.join('", "')}" but plan tools are [${[...toolNames].map(n => `"${n}"`).join(', ')}]. Ask the assistant to fix and regenerate.`)
+      return
+    }
+
     setImportSteps(steps)
 
     const setStep = (i: number, status: ImportStep['status']) => {
@@ -243,6 +257,28 @@ export default function BuildPage() {
       setError(e instanceof Error ? e.message : 'Import failed')
       setImportingIdx(null)
       setImportSteps([])
+    }
+  }
+
+  const openInBuilder = async (msgIdx: number, plan: BuildPlan) => {
+    setOpeningIdx(msgIdx)
+    setError('')
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: plan.name, description: plan.description ?? '', schema: plan.schema }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(err.error ?? 'Agent creation failed')
+      }
+      const created = await res.json() as { id: string }
+      router.push(`/builder/${created.id}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to open in builder')
+    } finally {
+      setOpeningIdx(null)
     }
   }
 
@@ -364,21 +400,43 @@ export default function BuildPage() {
                           )}
                         </div>
                         {plan && (
-                          <button
-                            onClick={() => importPlan(idx, plan)}
-                            disabled={isImporting}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 5,
-                              padding: '5px 12px', borderRadius: 7, border: 'none',
-                              background: isImporting ? 'var(--surface2)' : 'var(--blue)',
-                              color: isImporting ? 'var(--text3)' : '#fff',
-                              fontSize: 12, fontWeight: 600,
-                              cursor: isImporting ? 'not-allowed' : 'pointer',
-                            }}
-                          >
-                            <ArrowRight size={12} />
-                            {isImporting ? 'Building…' : 'Build it'}
-                          </button>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              onClick={() => openInBuilder(idx, plan)}
+                              disabled={isImporting || openingIdx === idx}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                padding: '5px 12px', borderRadius: 7,
+                                border: '1px solid var(--border)',
+                                background: 'var(--surface2)',
+                                color: 'var(--text2)',
+                                fontSize: 12, fontWeight: 600,
+                                cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
+                                opacity: (isImporting || openingIdx === idx) ? 0.6 : 1,
+                              }}
+                            >
+                              {openingIdx === idx
+                                ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                                : <ExternalLink size={12} />
+                              }
+                              Open in Builder
+                            </button>
+                            <button
+                              onClick={() => importPlan(idx, plan)}
+                              disabled={isImporting || openingIdx === idx}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                padding: '5px 12px', borderRadius: 7, border: 'none',
+                                background: (isImporting || openingIdx === idx) ? 'var(--surface2)' : 'var(--blue)',
+                                color: (isImporting || openingIdx === idx) ? 'var(--text3)' : '#fff',
+                                fontSize: 12, fontWeight: 600,
+                                cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
+                              }}
+                            >
+                              <ArrowRight size={12} />
+                              {isImporting ? 'Building…' : 'Build it'}
+                            </button>
+                          </div>
                         )}
                       </div>
 
