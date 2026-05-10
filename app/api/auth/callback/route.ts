@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -7,27 +7,17 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get('next') ?? '/agents'
 
   if (code) {
-    // Must set cookies on the response object directly — cookies() from next/headers
-    // is read-only in Route Handlers so exchangeCodeForSession would silently fail.
-    const response = NextResponse.redirect(`${origin}${next}`)
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return request.cookies.getAll() },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              response.cookies.set(name, value, options)
-            )
-          },
-        },
-      }
-    )
-
+    const supabase = await createSupabaseServerClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) return response
+    if (!error) {
+      // On Vercel the origin may be the internal URL — use x-forwarded-host
+      // (the public domain) so the redirect goes to the right place.
+      const forwardedHost = request.headers.get('x-forwarded-host')
+      if (forwardedHost) {
+        return NextResponse.redirect(`https://${forwardedHost}${next}`)
+      }
+      return NextResponse.redirect(`${origin}${next}`)
+    }
   }
 
   return NextResponse.redirect(`${origin}/login?error=auth_failed`)
