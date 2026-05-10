@@ -161,8 +161,8 @@ export async function POST(req: NextRequest) {
   const userId = await getUserFromSession()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json() as { messages: { role: string; content: string }[]; modelName?: string }
-  const { messages, modelName } = body
+  const body = await req.json() as { messages: { role: string; content: string }[]; modelName?: string; editingSchema?: unknown; editingAgentName?: string }
+  const { messages, modelName, editingSchema, editingAgentName } = body
   if (!messages?.length) return NextResponse.json({ error: 'No messages' }, { status: 400 })
 
   // Load model config
@@ -188,6 +188,11 @@ export async function POST(req: NextRequest) {
     ? `Previous conversation:\n${history.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n')}\n\nUser: ${latest}`
     : latest
 
+  // When editing an existing agent, inject current schema as context
+  const systemPrompt = editingSchema
+    ? `${SYSTEM_PROMPT}\n\n---\n## EDIT MODE\nYou are editing an existing agent called "${editingAgentName ?? 'this agent'}". Here is its current schema:\n\`\`\`json\n${JSON.stringify(editingSchema, null, 2).slice(0, 6000)}\n\`\`\`\nModify it according to the user's request and output the complete updated build plan JSON (same format as always — full schema, tools[], datatables[]).`
+    : SYSTEM_PROMPT
+
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
@@ -197,7 +202,7 @@ export async function POST(req: NextRequest) {
       try {
         await callLLM({
           provider, model: modelId, apiKey, baseUrl,
-          systemPrompt: SYSTEM_PROMPT,
+          systemPrompt,
           userMessage,
           temperature: 0.7,
           maxTokens: 8192,
