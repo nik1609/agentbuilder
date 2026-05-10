@@ -242,6 +242,7 @@ function BuildPageInner() {
   // Test after build
   const [builtAgentId, setBuiltAgentId] = useState<string | null>(null)
   const [builtAgentName, setBuiltAgentName] = useState<string | null>(null)
+  const [builtMsgIdx, setBuiltMsgIdx] = useState<number | null>(null)
   const [testInput, setTestInput] = useState('')
   const [testRunning, setTestRunning] = useState(false)
   const [testOutput, setTestOutput] = useState<string | null>(null)
@@ -335,6 +336,7 @@ function BuildPageInner() {
     setEditingAgentSchema(null)
     setBuiltAgentId(null)
     setBuiltAgentName(null)
+    setBuiltMsgIdx(null)
     setTestOutput(null)
     setMessages([{ role: 'assistant', content: WELCOME }])
     setInput('')
@@ -351,6 +353,7 @@ function BuildPageInner() {
     setShowSessionList(false)
     setBuiltAgentId(session.agentId ?? null)
     setBuiltAgentName(session.agentName ?? null)
+    setBuiltMsgIdx(null)
     setTestOutput(null)
     setLastPlanMsgIdx(null)
   }
@@ -618,6 +621,7 @@ function BuildPageInner() {
       // Show inline test instead of navigating away
       setBuiltAgentId(agentId)
       setBuiltAgentName(plan.name)
+      setBuiltMsgIdx(msgIdx)
       setImportingIdx(null)
 
     } catch (e) {
@@ -837,31 +841,45 @@ function BuildPageInner() {
                             </span>
                           </div>
                           {plan && (
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button
-                                onClick={() => router.push(`/builder/${editingAgentId ?? ''}`)}
-                                disabled={!editingAgentId}
-                                style={{
-                                  display: editingAgentId ? 'flex' : 'none', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7,
-                                  border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text2)',
-                                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                                }}
-                              >
-                                <ExternalLink size={12} /> Open in Builder
-                              </button>
-                              <button
-                                onClick={() => importPlan(idx, plan)}
-                                disabled={isImporting || openingIdx === idx}
-                                style={{
-                                  display: 'flex', alignItems: 'center', gap: 5, padding: '5px 14px', borderRadius: 7, border: 'none',
-                                  background: (isImporting || openingIdx === idx) ? 'var(--surface2)' : 'var(--blue)',
-                                  color: (isImporting || openingIdx === idx) ? 'var(--text3)' : '#fff',
-                                  fontSize: 12, fontWeight: 600, cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
-                                }}
-                              >
-                                <ArrowRight size={12} />
-                                {isImporting ? (editingAgentId ? 'Applying…' : 'Building…') : (editingAgentId ? 'Apply Changes' : 'Build it')}
-                              </button>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              {/* After this plan was built/applied — show Open in Builder instead */}
+                              {builtMsgIdx === idx && builtAgentId ? (
+                                <>
+                                  <span style={{ fontSize: 11, color: '#22d79a', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <CheckCircle size={11} /> Built
+                                  </span>
+                                  <button
+                                    onClick={() => router.push(`/builder/${builtAgentId}`)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                                  >
+                                    <ExternalLink size={12} /> Open in Builder
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  {(editingAgentId) && (
+                                    <button
+                                      onClick={() => router.push(`/builder/${editingAgentId}`)}
+                                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text2)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                      <ExternalLink size={12} /> Open in Builder
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => importPlan(idx, plan)}
+                                    disabled={isImporting || openingIdx === idx}
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: 5, padding: '5px 14px', borderRadius: 7, border: 'none',
+                                      background: (isImporting || openingIdx === idx) ? 'var(--surface2)' : 'var(--blue)',
+                                      color: (isImporting || openingIdx === idx) ? 'var(--text3)' : '#fff',
+                                      fontSize: 12, fontWeight: 600, cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
+                                    }}
+                                  >
+                                    <ArrowRight size={12} />
+                                    {isImporting ? (editingAgentId ? 'Applying…' : 'Building…') : (editingAgentId ? 'Apply Changes' : 'Build it')}
+                                  </button>
+                                </>
+                              )}
                             </div>
                           )}
                         </div>
