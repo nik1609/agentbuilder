@@ -7,21 +7,26 @@ export async function GET(req: NextRequest) {
   const userId = await getUserId(req)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const db = createAdminClient()
-  const { data, error } = await db
-    .from('agents')
-    .select('*')
-    .eq('user_id', userId)
-    .order('updated_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data ?? [])
+  try {
+    const db = createAdminClient()
+    const { data, error } = await db
+      .from('agents')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data ?? [])
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[GET /api/agents] Supabase error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
 }
 
 export async function POST(req: NextRequest) {
   const userId = await getUserId(req)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const db = createAdminClient()
   let body: Record<string, unknown>
   try {
     body = await req.json()
@@ -33,24 +38,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Agent name is required' }, { status: 400 })
   }
 
-  const now = new Date().toISOString()
-  const { data, error } = await db
-    .from('agents')
-    .insert({
-      id: uuidv4(),
-      user_id: userId,
-      name: (body.name as string).trim(),
-      description: (body.description as string | undefined) ?? '',
-      version: 1,
-      schema: (body.schema as object | undefined) ?? { nodes: [], edges: [] },
-      is_public: false,
-      run_count: 0,
-      created_at: now,
-      updated_at: now,
-    })
-    .select()
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data, { status: 201 })
+  try {
+    const db = createAdminClient()
+    const now = new Date().toISOString()
+    const { data, error } = await db
+      .from('agents')
+      .insert({
+        id: uuidv4(),
+        user_id: userId,
+        name: (body.name as string).trim(),
+        description: (body.description as string | undefined) ?? '',
+        version: 1,
+        schema: (body.schema as object | undefined) ?? { nodes: [], edges: [] },
+        is_public: false,
+        run_count: 0,
+        created_at: now,
+        updated_at: now,
+      })
+      .select()
+      .single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data, { status: 201 })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[POST /api/agents] Supabase error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
 }
