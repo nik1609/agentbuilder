@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Don't bundle these Node.js built-ins / native packages — require at runtime instead
-  serverExternalPackages: ['undici'],
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
   },
