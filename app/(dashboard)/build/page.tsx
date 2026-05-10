@@ -163,8 +163,18 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d ago`
 }
 
-function PlanCard({ plan, isEditing }: { plan: BuildPlan; isEditing: boolean }) {
+function PlanCard({
+  plan, isEditing, models, selectedModel, onModelChange, isBuilt,
+}: {
+  plan: BuildPlan
+  isEditing: boolean
+  models: Model[]
+  selectedModel: string
+  onModelChange: (m: string) => void
+  isBuilt: boolean
+}) {
   const [showJson, setShowJson] = useState(false)
+  const llmNodeCount = (plan.schema.nodes as Array<{ type?: string }>).filter(n => n.type === 'llm').length
   const nodeCount = plan.schema.nodes.length
 
   return (
@@ -198,6 +208,30 @@ function PlanCard({ plan, isEditing }: { plan: BuildPlan; isEditing: boolean }) 
             </span>
           ))}
         </div>
+
+        {/* Model picker — shown only when there are LLM nodes and plan isn't built yet */}
+        {llmNodeCount > 0 && !isBuilt && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4, borderTop: '1px solid var(--border2)' }}>
+            <Layers size={11} color="var(--text3)" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+              Default model ({llmNodeCount} LLM node{llmNodeCount !== 1 ? 's' : ''})
+            </span>
+            <select
+              value={selectedModel}
+              onChange={e => onModelChange(e.target.value)}
+              style={{
+                flex: 1, minWidth: 0, padding: '5px 8px', borderRadius: 7,
+                border: '1px solid var(--border)', background: 'var(--surface2)',
+                color: 'var(--text)', fontSize: 11, cursor: 'pointer', outline: 'none',
+              }}
+            >
+              <option value="">Gemini 2.5 Flash (default)</option>
+              {models.map(m => (
+                <option key={m.id} value={m.name}>{m.name} · {m.provider}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* JSON toggle */}
@@ -238,6 +272,9 @@ function BuildPageInner() {
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null)
   const [editingAgentName, setEditingAgentName] = useState<string | null>(null)
   const [editingAgentSchema, setEditingAgentSchema] = useState<unknown>(null)
+
+  // Per-plan model selection: msgIdx → model name
+  const [planModels, setPlanModels] = useState<Record<number, string>>({})
 
   // Test after build
   const [builtAgentId, setBuiltAgentId] = useState<string | null>(null)
@@ -338,6 +375,7 @@ function BuildPageInner() {
     setBuiltAgentName(null)
     setBuiltMsgIdx(null)
     setTestOutput(null)
+    setPlanModels({})
     setMessages([{ role: 'assistant', content: WELCOME }])
     setInput('')
     setError('')
@@ -468,7 +506,7 @@ function BuildPageInner() {
     }
   }
 
-  const importPlan = async (msgIdx: number, plan: BuildPlan) => {
+  const importPlan = async (msgIdx: number, plan: BuildPlan, modelName?: string) => {
     setImportingIdx(msgIdx)
     setError('')
     setBuiltAgentId(null)
@@ -564,6 +602,16 @@ function BuildPageInner() {
 
       const patchedSchema = JSON.parse(JSON.stringify(plan.schema)) as typeof plan.schema
       const schemaNodes = (patchedSchema?.nodes ?? []) as Array<{ type?: string; data?: Record<string, unknown> }>
+
+      // Apply the chosen model to every LLM node
+      if (modelName) {
+        for (const node of schemaNodes) {
+          if ((node.type === 'llm' || node.data?.nodeType === 'llm') && node.data) {
+            node.data.model = modelName
+          }
+        }
+      }
+
       for (const node of schemaNodes) {
         if (node.type === 'tool' && node.data) {
           const cfg = node.data.toolConfig as Record<string, unknown> | undefined
@@ -866,7 +914,7 @@ function BuildPageInner() {
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => importPlan(idx, plan)}
+                                    onClick={() => importPlan(idx, plan, planModels[idx] || undefined)}
                                     disabled={isImporting || openingIdx === idx}
                                     style={{
                                       display: 'flex', alignItems: 'center', gap: 5, padding: '5px 14px', borderRadius: 7, border: 'none',
@@ -904,7 +952,16 @@ function BuildPageInner() {
                         )}
 
                         {/* Visual plan card */}
-                        {plan && <PlanCard plan={plan} isEditing={!!editingAgentId} />}
+                        {plan && (
+                          <PlanCard
+                            plan={plan}
+                            isEditing={!!editingAgentId}
+                            models={models}
+                            selectedModel={planModels[idx] ?? ''}
+                            onModelChange={m => setPlanModels(prev => ({ ...prev, [idx]: m }))}
+                            isBuilt={builtMsgIdx === idx}
+                          />
+                        )}
                         {!plan && (
                           <pre style={{ padding: '14px 18px', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.7, color: 'var(--text2)', overflowX: 'auto', margin: 0, maxHeight: 420, overflowY: 'auto' }}>
                             {part.value}
