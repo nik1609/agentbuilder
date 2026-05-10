@@ -171,6 +171,7 @@ export async function POST(req: NextRequest) {
   let modelId = 'gemini-2.5-flash'
   let apiKey: string | undefined
   let baseUrl: string | undefined
+  let maxTokens: number | undefined // undefined = let the model decide its own limit
 
   if (modelName) {
     const { data: m } = await db.from('models').select('*').eq('user_id', userId).eq('name', modelName).single()
@@ -179,6 +180,8 @@ export async function POST(req: NextRequest) {
       modelId = m.model_id ?? modelId
       apiKey = m.api_key ?? undefined
       baseUrl = m.base_url ?? undefined
+      // Use the model's configured max_tokens if set; undefined means no cap (model decides)
+      maxTokens = m.max_tokens ? Number(m.max_tokens) : undefined
     }
   }
 
@@ -205,6 +208,7 @@ export async function POST(req: NextRequest) {
           systemPrompt,
           userMessage,
           temperature: 0.7,
+          ...(maxTokens !== undefined ? { maxTokens } : {}),
           onToken: (token) => send({ type: 'token', token }),
         })
         send({ type: 'done' })
