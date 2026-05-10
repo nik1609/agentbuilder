@@ -5,6 +5,9 @@
  * This is needed because Node.js built-in fetch uses undici which does its
  * own DNS resolution and may prefer IPv6 even when --dns-result-order=ipv4first
  * is set, causing "TypeError: fetch failed" on Supabase calls in local dev.
+ *
+ * undici is listed in serverExternalPackages in next.config.ts so that
+ * webpack does not attempt to bundle it (it's a Node.js built-in).
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
