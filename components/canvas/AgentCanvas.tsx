@@ -5,7 +5,7 @@ import {
   addEdge, Connection, useNodesState, useEdgesState, Node, Edge,
   NodeChange, EdgeChange, ConnectionMode, ReactFlowInstance,
 } from '@xyflow/react'
-import { Undo2, Redo2 } from 'lucide-react'
+import { Undo2, Redo2, ChevronLeft, ChevronRight } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import LLMNode from './nodes/LLMNode'
 import ToolNode from './nodes/ToolNode'
@@ -289,6 +289,7 @@ export default function AgentCanvas({
 
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
   const selectedNodeData = selectedNode?.data as NodeData | undefined
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
 
   return (
     <div className="w-full h-full relative flex">
@@ -406,15 +407,37 @@ export default function AgentCanvas({
         </ReactFlow>
       </div>
 
-      {/* Node config panel */}
+      {/* Right seam toggle — mirrors left Config Studio toggle, always at top:50% */}
       {selectedNodeId && selectedNodeData && (
+        <button
+          onClick={() => setPanelCollapsed(c => !c)}
+          title={panelCollapsed ? 'Expand panel' : 'Collapse panel'}
+          style={{
+            position: 'absolute',
+            right: panelCollapsed ? -12 : 270 - 12,
+            top: '50%', transform: 'translateY(-50%)',
+            width: 24, height: 24, borderRadius: 6,
+            border: '1px solid var(--border)', background: 'var(--surface)',
+            color: 'var(--text3)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+            zIndex: 30,
+            transition: 'right 0.2s ease',
+          }}
+        >
+          {panelCollapsed ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+        </button>
+      )}
+
+      {/* Node config panel */}
+      {selectedNodeId && selectedNodeData && !panelCollapsed && (
         <NodeConfigPanel
           key={selectedNodeId}
           nodeId={selectedNodeId}
           nodeData={selectedNodeData}
           allNodes={nodes.map(n => ({ id: n.id, data: { label: String(n.data.label ?? ''), nodeType: String(n.data.nodeType ?? '') } }))}
           onUpdate={(data) => updateNodeData(selectedNodeId, data)}
-          onClose={() => setSelectedNodeId(null)}
+          onClose={() => { setSelectedNodeId(null); setPanelCollapsed(false) }}
           onAfterToolSave={onAfterToolSave}
         />
       )}

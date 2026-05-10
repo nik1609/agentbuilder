@@ -18,8 +18,10 @@ export function generateApiKey(): string {
 export async function getUserFromSession(): Promise<string | null> {
   try {
     const supabase = await createSupabaseServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    return user?.id ?? null
+    // getSession reads from the cookie — no network call, no timeout risk.
+    // getUser() makes a live Supabase API call on every request.
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.user?.id ?? null
   } catch {
     return null
   }

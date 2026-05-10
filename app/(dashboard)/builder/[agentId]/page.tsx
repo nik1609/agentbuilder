@@ -599,42 +599,45 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex min-h-0" style={{ position: 'relative', overflow: 'hidden' }}>
-        {/* Config Studio — icon strip always visible, content panel collapses */}
-        <div style={{
-          width: studioOpen ? 300 : 56, flexShrink: 0,
-          overflow: 'hidden',
-          transition: 'width 0.2s ease', zIndex: 10,
-          position: 'relative',
-        }}>
-          <ConfigStudio
-            currentAgentId={savedAgentId ?? undefined}
-            currentAgentName={agentName}
-          />
-        </div>
-
-        {/* Collapse toggle — sits on the seam between Config Studio and canvas */}
-        <button
-          onClick={() => setStudioOpen(o => !o)}
-          title={studioOpen ? 'Collapse panel' : 'Expand panel'}
-          style={{
-            position: 'absolute',
-            left: (studioOpen ? 300 : 56) - 12,
-            top: '50%', transform: 'translateY(-50%)',
-            width: 24, height: 24, borderRadius: 6,
-            border: '1px solid var(--border)', background: 'var(--surface)',
-            color: 'var(--text3)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-            zIndex: 30,
-            transition: 'left 0.2s ease',
-          }}
-        >
-          {studioOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-        </button>
-
-        {/* Canvas + panels */}
+      <div className="flex-1 flex min-h-0" style={{ overflow: 'hidden' }}>
+        {/* Canvas + panels (column: canvas row on top, chat below) */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+          {/* Studio + Canvas row — toggle lives here so top:50% = canvas center only */}
+          <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+
+            {/* Config Studio — icon strip always visible, content panel collapses */}
+            <div style={{
+              width: studioOpen ? 300 : 56, flexShrink: 0,
+              overflow: 'hidden',
+              transition: 'width 0.2s ease', zIndex: 10,
+              position: 'relative',
+            }}>
+              <ConfigStudio
+                currentAgentId={savedAgentId ?? undefined}
+                currentAgentName={agentName}
+              />
+            </div>
+
+            {/* Left seam toggle — top:50% of canvas row, never affected by chat height */}
+            <button
+              onClick={() => setStudioOpen(o => !o)}
+              title={studioOpen ? 'Collapse panel' : 'Expand panel'}
+              style={{
+                position: 'absolute',
+                left: (studioOpen ? 300 : 56) - 12,
+                top: '50%', transform: 'translateY(-50%)',
+                width: 24, height: 24, borderRadius: 6,
+                border: '1px solid var(--border)', background: 'var(--surface)',
+                color: 'var(--text3)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+                zIndex: 30,
+                transition: 'left 0.2s ease',
+              }}
+            >
+              {studioOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+            </button>
+
           <div className="flex-1 relative overflow-hidden" style={{ minHeight: 0 }}>
             {schemaReady && (
               <AgentCanvas
@@ -651,7 +654,7 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
               </div>
             )}
           </div>
-
+          </div>{/* end studio+canvas row */}
 
           {/* Chat thread — conversation history + streaming */}
           {(chatMessages.length > 0 || running) && (
