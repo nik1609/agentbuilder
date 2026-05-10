@@ -1,9 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 
-const PROTECTED = ['/dashboard', '/agents', '/builder', '/api-keys', '/analytics', '/docs']
+const PROTECTED = [
+  '/dashboard', '/agents', '/builder', '/api-keys', '/analytics',
+  '/docs', '/runs', '/models', '/tools', '/chat', '/build',
+  '/datatables', '/memory', '/prompts', '/guardrails',
+]
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Only protect dashboard routes (not API routes)
