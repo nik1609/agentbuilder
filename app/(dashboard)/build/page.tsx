@@ -73,17 +73,57 @@ const SUGGESTION_CHIPS = [
 ]
 
 function parseContent(text: string) {
+  // Line-based parser: only treats ``` at the very start of a line as a fence.
+  // This prevents triple-backticks INSIDE JSON string values (e.g. passthrough templates
+  // like "```json\n{{nodeId}}\n```") from breaking the outer code block.
   const parts: { type: 'text' | 'code'; lang: string; value: string }[] = []
-  const re = /```(\w*)\n?([\s\S]*?)```/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) parts.push({ type: 'text', lang: '', value: text.slice(last, m.index) })
-    parts.push({ type: 'code', lang: m[1] || 'text', value: m[2].trim() })
-    last = m.index + m[0].length
+  const lines = text.split('\n')
+  let inCode = false
+  let codeLang = ''
+  let codeLines: string[] = []
+  let textLines: string[] = []
+
+  for (const line of lines) {
+    if (!inCode && /^```(\w*)$/.test(line)) {
+      if (textLines.length > 0) {
+        const joined = textLines.join('\n').trim()
+        if (joined) parts.push({ type: 'text', lang: '', value: joined })
+        textLines = []
+      }
+      codeLang = line.slice(3)
+      codeLines = []
+      inCode = true
+    } else if (inCode && line.trim() === '```') {
+      parts.push({ type: 'code', lang: codeLang, value: codeLines.join('\n').trim() })
+      codeLines = []
+      inCode = false
+    } else if (inCode) {
+      codeLines.push(line)
+    } else {
+      textLines.push(line)
+    }
   }
-  if (last < text.length) parts.push({ type: 'text', lang: '', value: text.slice(last) })
+  // Unclosed block (still streaming) — show remaining as text
+  if (inCode) { textLines.push('```' + codeLang); textLines.push(...codeLines) }
+  if (textLines.length > 0) {
+    const joined = textLines.join('\n').trim()
+    if (joined) parts.push({ type: 'text', lang: '', value: joined })
+  }
   return parts
+}
+
+// Extract the LAST ```json block by scanning lines from the end.
+// Robust against nested backtick sequences inside JSON string values.
+function extractLastJsonBlock(text: string): string | null {
+  const lines = text.split('\n')
+  let end = -1
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (end === -1 && lines[i].trim() === '```') { end = i; continue }
+    if (end !== -1 && /^```json/.test(lines[i])) {
+      return lines.slice(i + 1, end).join('\n')
+    }
+  }
+  return null
 }
 
 function tryExtractPlan(code: string): BuildPlan | null {
@@ -408,7 +448,8 @@ function BuildPageInner() {
       saveCurrentSession(finalMsgs)
 
       // Check if response contains a plan → show suggestion chips
-      const hasPlan = acc.includes('```json') && tryExtractPlan(acc.match(/```json\n?([\s\S]*?)```/)?.[1] ?? '') !== null
+      const lastBlock = extractLastJsonBlock(acc)
+      const hasPlan = lastBlock !== null && tryExtractPlan(lastBlock) !== null
       if (hasPlan) setLastPlanMsgIdx(finalMsgs.length - 1)
 
     } catch (e) {
@@ -446,18 +487,42 @@ function BuildPageInner() {
 
       for (const tool of plan.tools) {
         setStep(stepIdx, 'active')
-        const res = await fetch('/api/tools', {
+        const toolPayload = {
+          name: tool.name, description: tool.description ?? '', type: tool.type,
+          method: tool.method ?? 'GET', endpoint: tool.endpoint ?? '',
+          headers: tool.headers ?? {}, inputSchema: tool.inputSchema ?? {}, timeout: 10000,
+        }
+        let toolRes = await fetch('/api/tools', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: tool.name, description: tool.description ?? '', type: tool.type,
-            method: tool.method ?? 'GET', endpoint: tool.endpoint ?? '',
-            headers: tool.headers ?? {}, inputSchema: tool.inputSchema ?? {}, timeout: 10000,
-          }),
+          body: JSON.stringify(toolPayload),
         })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: string }
-          throw new Error(`Tool "${tool.name}": ${err.error ?? res.status}`)
+        // If name already exists (409 or 500 with duplicate), try to find and update it
+        if (!toolRes.ok) {
+          const errBody = await toolRes.json().catch(() => ({})) as { error?: string }
+          const isDuplicate = errBody.error?.includes('duplicate') || errBody.error?.includes('unique') || toolRes.status === 409
+          if (isDuplicate) {
+            // Fetch existing tools to find the one with this name
+            const listRes = await fetch('/api/tools')
+            if (listRes.ok) {
+              const existing = await listRes.json() as { id: string; name: string }[]
+              const match = existing.find(t => t.name === tool.name)
+              if (match) {
+                const patchRes = await fetch('/api/tools', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: match.id, ...toolPayload }),
+                })
+                if (!patchRes.ok) {
+                  const pErr = await patchRes.json().catch(() => ({})) as { error?: string }
+                  throw new Error(`Tool "${tool.name}": ${pErr.error ?? patchRes.status}`)
+                }
+                toolRes = patchRes // mark success
+              }
+            }
+          } else {
+            throw new Error(`Tool "${tool.name}": ${errBody.error ?? toolRes.status}`)
+          }
         }
         setStep(stepIdx, 'done')
         stepIdx++
@@ -466,17 +531,30 @@ function BuildPageInner() {
       const datatableIdMap: Record<string, string> = {}
       for (const dt of plan.datatables) {
         setStep(stepIdx, 'active')
-        const res = await fetch('/api/datatables', {
+        const dtRes = await fetch('/api/datatables', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: dt.name, description: dt.description ?? '', columns: dt.columns }),
         })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: string }
-          throw new Error(`Datatable "${dt.name}": ${err.error ?? res.status}`)
+        if (dtRes.ok) {
+          const created = await dtRes.json() as { id: string }
+          datatableIdMap[dt.name] = created.id
+        } else {
+          const errBody = await dtRes.json().catch(() => ({})) as { error?: string }
+          const isDuplicate = errBody.error?.includes('duplicate') || errBody.error?.includes('unique') || dtRes.status === 409
+          if (isDuplicate) {
+            // Find existing datatable with this name
+            const listRes = await fetch('/api/datatables')
+            if (listRes.ok) {
+              const existing = await listRes.json() as { id: string; name: string }[]
+              const match = existing.find(d => d.name === dt.name)
+              if (match) { datatableIdMap[dt.name] = match.id }
+              else throw new Error(`Datatable "${dt.name}": ${errBody.error ?? dtRes.status}`)
+            } else throw new Error(`Datatable "${dt.name}": ${errBody.error ?? dtRes.status}`)
+          } else {
+            throw new Error(`Datatable "${dt.name}": ${errBody.error ?? dtRes.status}`)
+          }
         }
-        const created = await res.json() as { id: string }
-        datatableIdMap[dt.name] = created.id
         setStep(stepIdx, 'done')
         stepIdx++
       }
