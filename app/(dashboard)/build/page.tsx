@@ -703,84 +703,76 @@ function BuildPageInner() {
   const showStarters = messages.length === 1 && !streaming && !editingAgentId
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)', fontFamily: 'inherit' }}>
 
-      {/* Header */}
-      <div style={{ padding: '14px 32px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #7c6ff0, #b080f8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Wand2 size={13} color="white" />
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div style={{ padding: '9px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 6, background: 'linear-gradient(135deg,#7c6ff0,#b080f8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Wand2 size={10} color="white" />
           </div>
-          <h1 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Build via Chat</h1>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>Build via Chat</span>
         </div>
 
-        {/* Edit mode badge */}
         {editingAgentId && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: 'rgba(245,160,32,0.1)', border: '1px solid rgba(245,160,32,0.3)' }}>
-            <Edit3 size={11} color="#f5a020" />
-            <span style={{ fontSize: 12, color: '#f5a020', fontWeight: 600 }}>Editing: {editingAgentName}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 6, background: 'rgba(245,160,32,0.1)', border: '1px solid rgba(245,160,32,0.25)', flexShrink: 0 }}>
+            <Edit3 size={10} color="#f5a020" />
+            <span style={{ fontSize: 11, color: '#f5a020', fontWeight: 600 }}>Editing: {editingAgentName}</span>
             <button onClick={() => { setEditingAgentId(null); setEditingAgentName(null); setEditingAgentSchema(null) }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f5a020', padding: 0, display: 'flex', marginLeft: 2 }}>
-              <X size={11} />
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f5a020', padding: 0, display: 'flex', marginLeft: 1, opacity: 0.7 }}>
+              <X size={10} />
             </button>
           </div>
         )}
 
         {/* Session picker */}
-        <div ref={sessionListRef} style={{ position: 'relative', flex: 1, maxWidth: 300 }}>
-          <button
-            onClick={() => setShowSessionList(v => !v)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-              padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)',
-              background: 'var(--surface2)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', outline: 'none',
-            }}
+        <div ref={sessionListRef} style={{ position: 'relative', flex: 1, maxWidth: 240 }}>
+          <button onClick={() => setShowSessionList(v => !v)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text3)', fontSize: 12, cursor: 'pointer', outline: 'none', transition: 'border-color 0.15s' }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(124,111,240,0.35)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
           >
-            <Clock size={12} style={{ flexShrink: 0 }} />
+            <Clock size={11} style={{ flexShrink: 0 }} />
             <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {currentSession ? currentSession.name : 'New build'}
             </span>
-            <ChevronDown size={12} style={{ flexShrink: 0 }} />
+            <ChevronDown size={11} style={{ flexShrink: 0, transition: 'transform 0.15s', transform: showSessionList ? 'rotate(180deg)' : 'none' }} />
           </button>
 
           {showSessionList && (
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 200,
-              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.3)', overflow: 'hidden', minWidth: 300,
-            }}>
+            <div style={{ position: 'absolute', top: 'calc(100% + 5px)', left: 0, right: 0, zIndex: 200, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.25)', overflow: 'hidden', minWidth: 260 }}>
               <button onClick={startNewSession}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border)' }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 13px', border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border)' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
-                <Plus size={13} /> New build
+                <Plus size={12} /> New build
               </button>
               {sessions.length === 0 ? (
-                <div style={{ padding: '14px', fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>No previous builds yet</div>
+                <div style={{ padding: '12px', fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>No previous builds yet</div>
               ) : (
-                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
                   {sessions.map(s => (
                     <div key={s.id} onClick={() => loadSession(s)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', cursor: 'pointer', background: s.id === currentSessionId ? 'var(--surface2)' : 'transparent', borderBottom: '1px solid var(--border2)' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 13px', cursor: 'pointer', background: s.id === currentSessionId ? 'var(--surface2)' : 'transparent', borderBottom: '1px solid var(--border2)', transition: 'background 0.1s' }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
                       onMouseLeave={e => (e.currentTarget.style.background = s.id === currentSessionId ? 'var(--surface2)' : 'transparent')}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 1 }}>
                           <span style={{ fontSize: 10, color: 'var(--text3)' }}>{timeAgo(s.updatedAt)}</span>
                           {s.agentName && (
-                            <span style={{ fontSize: 10, color: '#22d79a', background: 'rgba(34,215,154,0.1)', border: '1px solid rgba(34,215,154,0.2)', borderRadius: 4, padding: '0 5px' }}>
-                              <Bot size={8} style={{ display: 'inline', marginRight: 2 }} />{s.agentName}
+                            <span style={{ fontSize: 10, color: '#22d79a', background: 'rgba(34,215,154,0.08)', border: '1px solid rgba(34,215,154,0.18)', borderRadius: 4, padding: '0 5px' }}>
+                              {s.agentName}
                             </span>
                           )}
                         </div>
                       </div>
                       <button onClick={e => deleteSession(s.id, e)}
-                        style={{ padding: 4, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, display: 'flex' }}
-                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--red)'; e.currentTarget.style.background = 'rgba(232,85,85,0.1)' }}
-                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.background = 'transparent' }}
+                        style={{ padding: 4, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, display: 'flex', opacity: 0.5, transition: 'opacity 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = 'var(--red)' }}
+                        onMouseLeave={e => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.color = 'var(--text3)' }}
                       >
                         <Trash2 size={11} />
                       </button>
@@ -792,315 +784,282 @@ function BuildPageInner() {
           )}
         </div>
 
-        {/* Model picker */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>Model</span>
-          <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
-            style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12, cursor: 'pointer', outline: 'none', minWidth: 170 }}>
-            <option value="">Default (Gemini 2.5 Flash)</option>
-            {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-          </select>
-        </div>
+        <div style={{ flex: 1 }} />
+
+        {/* Model picker — compact */}
+        <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
+          style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', outline: 'none', maxWidth: 180 }}>
+          <option value="">Gemini 2.5 Flash</option>
+          {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+        </select>
       </div>
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* ── Scroll area ────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 16px 12px' }}>
+        <div style={{ maxWidth: 700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-        {/* Starter prompts — empty state */}
-        {showStarters && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxWidth: 700, paddingLeft: 42 }}>
-            {STARTER_PROMPTS.map((p, i) => (
-              <button key={i} onClick={() => sendMessage(p.label)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 20,
-                  border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)',
-                  fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(124,111,240,0.4)'; e.currentTarget.style.color = 'var(--blue)' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text2)' }}
-              >
-                <span>{p.icon}</span> {p.label}
-              </button>
-            ))}
-          </div>
-        )}
+          {/* Starter prompts */}
+          {showStarters && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 7, marginBottom: 28 }}>
+              {STARTER_PROMPTS.map((p, i) => (
+                <button key={i} onClick={() => sendMessage(p.label)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', lineHeight: 1.4 }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(124,111,240,0.4)'; e.currentTarget.style.background = 'rgba(124,111,240,0.04)'; e.currentTarget.style.color = 'var(--text)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface)'; e.currentTarget.style.color = 'var(--text2)' }}
+                >
+                  <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>{p.icon}</span>
+                  <span>{p.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
-        {messages.map((msg, idx) => {
-          const isUser = msg.role === 'user'
-          const isStreamingThis = streaming && idx === messages.length - 1 && !isUser
-          const parts = parseContent(msg.content)
-          const isLastAssistant = !isUser && idx === messages.length - 1
+          {/* Messages */}
+          {messages.map((msg, idx) => {
+            const isUser = msg.role === 'user'
+            const isStreamingThis = streaming && idx === messages.length - 1 && !isUser
+            const parts = parseContent(msg.content)
+            const isLastAssistant = !isUser && idx === messages.length - 1
 
-          return (
-            <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexDirection: isUser ? 'row-reverse' : 'row' }}>
-                <div style={{
-                  width: 30, height: 30, borderRadius: 9, flexShrink: 0, marginTop: 2,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: isUser ? 'rgba(124,111,240,0.15)' : 'rgba(124,111,240,0.08)',
-                  border: `1px solid ${isUser ? 'rgba(124,111,240,0.3)' : 'var(--border)'}`,
-                }}>
-                  {isUser ? <User size={13} color="var(--blue)" /> : <Wand2 size={13} color="var(--blue)" />}
-                </div>
-
-                <div style={{ maxWidth: 700, minWidth: 0, flex: 1 }}>
-                  {isStreamingThis && msg.content === '' && (
-                    <div style={{ padding: '12px 16px', borderRadius: '4px 14px 14px 14px', background: 'var(--surface)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      {[0, 0.2, 0.4].map((delay, i) => (
-                        <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)', display: 'inline-block', animation: 'pulse 1.2s ease-in-out infinite', animationDelay: `${delay}s` }} />
-                      ))}
+            return (
+              <div key={idx} style={{ marginBottom: 20, animation: 'fadeUp 0.18s ease-out both' }}>
+                {isUser ? (
+                  /* User bubble — right aligned */
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{ maxWidth: '78%', padding: '10px 15px', borderRadius: '18px 18px 4px 18px', background: 'rgba(124,111,240,0.13)', border: '1px solid rgba(124,111,240,0.2)', fontSize: 14, color: 'var(--text)', lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {msg.content}
                     </div>
-                  )}
+                  </div>
+                ) : (
+                  /* Assistant — no bubble, just text + plan cards */
+                  <div style={{ paddingRight: 8 }}>
+                    {/* Typing indicator */}
+                    {isStreamingThis && msg.content === '' && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '10px 2px', marginBottom: 4 }}>
+                        {[0, 0.18, 0.36].map((delay, i) => (
+                          <span key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--blue)', display: 'inline-block', opacity: 0.4, animation: 'pulse 1.1s ease-in-out infinite', animationDelay: `${delay}s` }} />
+                        ))}
+                      </div>
+                    )}
 
-                  {parts.map((part, pi) => {
-                    if (part.type === 'text' && part.value.trim() === '') return null
+                    {parts.map((part, pi) => {
+                      if (part.type === 'text' && !part.value.trim()) return null
 
-                    if (part.type === 'text') {
-                      return (
-                        <div key={pi} style={{
-                          padding: '12px 16px',
-                          borderRadius: isUser ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
-                          background: isUser ? 'rgba(124,111,240,0.1)' : 'var(--surface)',
-                          border: `1px solid ${isUser ? 'rgba(124,111,240,0.2)' : 'var(--border)'}`,
-                          marginBottom: pi < parts.length - 1 ? 8 : 0,
-                          display: 'inline-block', maxWidth: '100%',
-                        }}>
-                          <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
+                      if (part.type === 'text') {
+                        return (
+                          <p key={pi} style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.75, margin: '0 0 10px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                             <TextSpan text={part.value.trim()} />
                             {isStreamingThis && pi === parts.length - 1 && (
-                              <span style={{ display: 'inline-block', width: 2, height: 14, background: 'var(--blue)', marginLeft: 2, verticalAlign: 'text-bottom' }}>▋</span>
+                              <span style={{ display: 'inline-block', width: 2, height: 13, background: 'var(--blue)', marginLeft: 2, verticalAlign: 'text-bottom', animation: 'blink 1s step-end infinite' }}>▋</span>
                             )}
                           </p>
-                        </div>
-                      )
-                    }
+                        )
+                      }
 
-                    const plan = part.lang === 'json' ? tryExtractPlan(part.value) : null
-                    const isImporting = importingIdx === idx
+                      const plan = part.lang === 'json' ? tryExtractPlan(part.value) : null
+                      const isImporting = importingIdx === idx
 
-                    return (
-                      <div key={pi} style={{ marginBottom: pi < parts.length - 1 ? 8 : 0, borderRadius: 12, border: `1px solid ${plan ? 'rgba(124,111,240,0.4)' : 'var(--border)'}`, overflow: 'hidden', background: 'var(--surface)' }}>
-                        {/* Plan header */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: plan ? 'rgba(124,111,240,0.08)' : 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {plan && <Layers size={12} color="var(--blue)" />}
-                            <span style={{ fontSize: 10, fontFamily: 'monospace', color: plan ? 'var(--blue)' : 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                              {plan ? (editingAgentId ? 'Updated Plan — ready to apply' : 'Build Plan — ready to deploy') : (part.lang || 'code')}
-                            </span>
-                          </div>
-                          {plan && (
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                              {/* After this plan was built/applied — show Open in Builder instead */}
-                              {builtMsgIdx === idx && builtAgentId ? (
-                                <>
-                                  <span style={{ fontSize: 11, color: '#22d79a', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <CheckCircle size={11} /> Built
-                                  </span>
-                                  <button
-                                    onClick={() => router.push(`/builder/${builtAgentId}`)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                                  >
-                                    <ExternalLink size={12} /> Open in Builder
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  {(editingAgentId) && (
-                                    <button
-                                      onClick={() => router.push(`/builder/${editingAgentId}`)}
-                                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text2)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                                    >
-                                      <ExternalLink size={12} /> Open in Builder
+                      return (
+                        <div key={pi} style={{ marginBottom: 10, borderRadius: 12, border: `1px solid ${plan ? 'rgba(124,111,240,0.3)' : 'var(--border)'}`, overflow: 'hidden', background: 'var(--surface)', boxShadow: plan ? '0 2px 12px rgba(124,111,240,0.08)' : '0 1px 4px rgba(0,0,0,0.06)' }}>
+                          {/* Plan toolbar */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: plan ? 'rgba(124,111,240,0.06)' : 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {plan && <Layers size={11} color="var(--blue)" />}
+                              <span style={{ fontSize: 10, fontFamily: 'monospace', color: plan ? 'var(--blue)' : 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                                {plan ? (editingAgentId ? 'Updated plan' : 'Build plan') : (part.lang || 'code')}
+                              </span>
+                            </div>
+
+                            {plan && (
+                              <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                                {builtMsgIdx === idx && builtAgentId ? (
+                                  <>
+                                    <span style={{ fontSize: 11, color: '#22d79a', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}>
+                                      <CheckCircle size={11} /> Built
+                                    </span>
+                                    <button onClick={() => router.push(`/builder/${builtAgentId}`)}
+                                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 11px', borderRadius: 7, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                                      <ExternalLink size={10} /> Open in Builder
                                     </button>
-                                  )}
-                                  <button
-                                    onClick={() => importPlan(idx, plan, planModels[idx] || undefined)}
-                                    disabled={isImporting || openingIdx === idx}
-                                    style={{
-                                      display: 'flex', alignItems: 'center', gap: 5, padding: '5px 14px', borderRadius: 7, border: 'none',
-                                      background: (isImporting || openingIdx === idx) ? 'var(--surface2)' : 'var(--blue)',
-                                      color: (isImporting || openingIdx === idx) ? 'var(--text3)' : '#fff',
-                                      fontSize: 12, fontWeight: 600, cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
-                                    }}
-                                  >
-                                    <ArrowRight size={12} />
-                                    {isImporting ? (editingAgentId ? 'Applying…' : 'Building…') : (editingAgentId ? 'Apply Changes' : 'Build it')}
-                                  </button>
-                                </>
-                              )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {editingAgentId && (
+                                      <button onClick={() => router.push(`/builder/${editingAgentId}`)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                                        <ExternalLink size={10} /> Open
+                                      </button>
+                                    )}
+                                    <button onClick={() => importPlan(idx, plan, planModels[idx] || undefined)}
+                                      disabled={isImporting || openingIdx === idx}
+                                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: isImporting ? 'default' : 'pointer', background: isImporting ? 'var(--surface2)' : 'var(--blue)', color: isImporting ? 'var(--text3)' : '#fff', transition: 'background 0.15s' }}>
+                                      {isImporting
+                                        ? <><span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />{editingAgentId ? 'Applying…' : 'Building…'}</>
+                                        : <><ArrowRight size={11} />{editingAgentId ? 'Apply' : 'Build it'}</>
+                                      }
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Import progress */}
+                          {isImporting && importSteps.length > 0 && (
+                            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {importSteps.map((step, si) => (
+                                <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: step.status === 'done' ? '#22d79a' : step.status === 'active' ? 'var(--text)' : 'var(--text3)', transition: 'color 0.2s' }}>
+                                  {step.status === 'done'
+                                    ? <CheckCircle size={11} color="#22d79a" />
+                                    : step.status === 'active'
+                                      ? <span style={{ width: 11, height: 11, borderRadius: '50%', border: '2px solid var(--blue)', borderTopColor: 'transparent', display: 'inline-block', flexShrink: 0, animation: 'spin 0.7s linear infinite' }} />
+                                      : <span style={{ width: 11, height: 11, borderRadius: '50%', border: '2px solid var(--border)', display: 'inline-block', flexShrink: 0 }} />
+                                  }
+                                  {step.label}
+                                </div>
+                              ))}
                             </div>
                           )}
+
+                          {plan ? (
+                            <PlanCard plan={plan} isEditing={!!editingAgentId} models={models}
+                              selectedModel={planModels[idx] ?? ''} onModelChange={m => setPlanModels(prev => ({ ...prev, [idx]: m }))}
+                              isBuilt={builtMsgIdx === idx} />
+                          ) : (
+                            <pre style={{ padding: '12px 16px', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.7, color: 'var(--text2)', overflowX: 'auto', margin: 0, maxHeight: 400, overflowY: 'auto' }}>
+                              {part.value}
+                            </pre>
+                          )}
                         </div>
+                      )
+                    })}
 
-                        {/* Import steps */}
-                        {isImporting && importSteps.length > 0 && (
-                          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                            {importSteps.map((step, si) => (
-                              <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                                {step.status === 'done'
-                                  ? <CheckCircle size={12} color="#22d79a" />
-                                  : step.status === 'active'
-                                    ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--blue)', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                                    : <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--border)', display: 'inline-block' }} />
-                                }
-                                <span style={{ color: step.status === 'done' ? '#22d79a' : step.status === 'active' ? 'var(--text)' : 'var(--text3)' }}>
-                                  {step.label}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Visual plan card */}
-                        {plan && (
-                          <PlanCard
-                            plan={plan}
-                            isEditing={!!editingAgentId}
-                            models={models}
-                            selectedModel={planModels[idx] ?? ''}
-                            onModelChange={m => setPlanModels(prev => ({ ...prev, [idx]: m }))}
-                            isBuilt={builtMsgIdx === idx}
-                          />
-                        )}
-                        {!plan && (
-                          <pre style={{ padding: '14px 18px', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.7, color: 'var(--text2)', overflowX: 'auto', margin: 0, maxHeight: 420, overflowY: 'auto' }}>
-                            {part.value}
-                          </pre>
-                        )}
+                    {/* Suggestion chips */}
+                    {isLastAssistant && lastPlanMsgIdx === idx && !streaming && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+                        {SUGGESTION_CHIPS.map((chip, ci) => (
+                          <button key={ci} onClick={() => sendMessage(chip)}
+                            style={{ padding: '5px 11px', borderRadius: 20, fontSize: 11, border: '1px solid rgba(124,111,240,0.25)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', transition: 'all 0.15s' }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(124,111,240,0.5)'; e.currentTarget.style.color = 'var(--blue)'; e.currentTarget.style.background = 'rgba(124,111,240,0.06)' }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(124,111,240,0.25)'; e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.background = 'transparent' }}
+                          >
+                            {chip}
+                          </button>
+                        ))}
                       </div>
-                    )
-                  })}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
+            )
+          })}
 
-              {/* Suggestion chips — after last assistant message with a plan */}
-              {isLastAssistant && lastPlanMsgIdx === idx && !streaming && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 42 }}>
-                  {SUGGESTION_CHIPS.map((chip, ci) => (
-                    <button key={ci} onClick={() => sendMessage(chip)}
-                      style={{
-                        padding: '5px 12px', borderRadius: 16, fontSize: 12,
-                        border: '1px solid rgba(124,111,240,0.3)', background: 'rgba(124,111,240,0.06)',
-                        color: 'var(--blue)', cursor: 'pointer', transition: 'all 0.15s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(124,111,240,0.12)' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(124,111,240,0.06)' }}
-                    >
-                      {chip}
-                    </button>
-                  ))}
+          {/* ── Test panel ──────────────────────────────────────────── */}
+          {builtAgentId && !streaming && (
+            <div style={{ borderRadius: 12, border: '1px solid rgba(34,215,154,0.25)', background: 'var(--surface)', overflow: 'hidden', marginBottom: 16, boxShadow: '0 2px 12px rgba(34,215,154,0.06)', animation: 'fadeUp 0.2s ease-out both' }}>
+              <div style={{ padding: '9px 14px', borderBottom: '1px solid rgba(34,215,154,0.15)', background: 'rgba(34,215,154,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <CheckCircle size={13} color="#22d79a" />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#22d79a' }}>
+                    {editingAgentId ? 'Changes applied!' : 'Agent built!'}&ensp;
+                  </span>
+                  {builtAgentName && <span style={{ fontSize: 12, color: 'var(--text3)' }}>{builtAgentName}</span>}
                 </div>
-              )}
-            </div>
-          )
-        })}
-
-        {/* Built — inline test panel */}
-        {builtAgentId && !streaming && (
-          <div style={{ borderRadius: 14, border: '1px solid rgba(34,215,154,0.3)', background: 'rgba(34,215,154,0.04)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(34,215,154,0.2)', background: 'rgba(34,215,154,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CheckCircle size={14} color="#22d79a" />
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#22d79a' }}>
-                  {editingAgentId ? 'Changes applied!' : 'Agent created!'} Try it now
-                </span>
-                {builtAgentName && <span style={{ fontSize: 12, color: 'var(--text3)' }}>— {builtAgentName}</span>}
-              </div>
-              <button onClick={() => router.push(`/builder/${builtAgentId}`)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
-                <ExternalLink size={11} /> Open in Builder
-              </button>
-            </div>
-            <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={testInput}
-                  onChange={e => setTestInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') runTest() }}
-                  placeholder="Type a test message for this agent…"
-                  style={{ flex: 1, padding: '9px 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
-                />
-                <button onClick={runTest} disabled={!testInput.trim() || testRunning}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: 'none', background: !testInput.trim() || testRunning ? 'var(--surface2)' : '#22d79a', color: !testInput.trim() || testRunning ? 'var(--text3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: !testInput.trim() || testRunning ? 'not-allowed' : 'pointer' }}>
-                  {testRunning ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={13} />}
-                  Run
+                <button onClick={() => router.push(`/builder/${builtAgentId}`)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 11, cursor: 'pointer', transition: 'all 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'rgba(124,111,240,0.35)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+                >
+                  <ExternalLink size={11} /> Open in Builder
                 </button>
               </div>
-              {testOutput !== null && (
-                <div style={{ padding: '12px 14px', borderRadius: 9, background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-wrap', maxHeight: 300, overflowY: 'auto' }}>
-                  {testRunning ? <span style={{ color: 'var(--text3)' }}>Running…</span> : testOutput}
+              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 7 }}>
+                  <input value={testInput} onChange={e => setTestInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') runTest() }}
+                    placeholder="Send a test message to this agent…"
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.15s' }}
+                    onFocus={e => (e.target.style.borderColor = 'rgba(124,111,240,0.4)')}
+                    onBlur={e => (e.target.style.borderColor = 'var(--border)')}
+                  />
+                  <button onClick={runTest} disabled={!testInput.trim() || testRunning}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 16px', borderRadius: 9, border: 'none', background: !testInput.trim() || testRunning ? 'var(--surface2)' : '#22d79a', color: !testInput.trim() || testRunning ? 'var(--text3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: !testInput.trim() || testRunning ? 'default' : 'pointer', transition: 'background 0.15s' }}>
+                    {testRunning ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={13} />}
+                    Run
+                  </button>
                 </div>
-              )}
+                {testOutput !== null && (
+                  <div style={{ padding: '10px 12px', borderRadius: 9, background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-wrap', maxHeight: 260, overflowY: 'auto' }}>
+                    {testRunning ? <span style={{ color: 'var(--text3)', fontStyle: 'italic' }}>Running…</span> : testOutput}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {error && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, background: 'rgba(232,85,85,0.08)', border: '1px solid rgba(232,85,85,0.25)' }}>
-            <AlertCircle size={13} color="var(--red)" />
-            <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
-          </div>
-        )}
+          {/* Error */}
+          {error && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 12px', borderRadius: 9, background: 'rgba(232,85,85,0.06)', border: '1px solid rgba(232,85,85,0.2)', marginBottom: 12, animation: 'fadeUp 0.15s ease-out both' }}>
+              <AlertCircle size={13} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12, color: 'var(--red)', lineHeight: 1.5 }}>{error}</span>
+            </div>
+          )}
 
-        <div ref={bottomRef} />
+          <div ref={bottomRef} />
+        </div>
       </div>
 
-      {/* Input bar */}
-      <div style={{ padding: '12px 32px 20px', borderTop: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
-        {/* Attached file chip */}
-        {attachedFile && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, maxWidth: 800, margin: '0 auto 8px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 8, background: 'rgba(124,111,240,0.1)', border: '1px solid rgba(124,111,240,0.25)', fontSize: 12, color: 'var(--blue)' }}>
-              <Paperclip size={10} /> {attachedFile.name}
-              <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', padding: 0, display: 'flex', marginLeft: 2 }}>
-                <X size={10} />
-              </button>
-            </span>
+      {/* ── Input bar ───────────────────────────────────────────────────── */}
+      <div style={{ padding: '10px 16px 14px', background: 'var(--surface)', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ maxWidth: 700, margin: '0 auto' }}>
+          {/* File chip */}
+          {attachedFile && (
+            <div style={{ marginBottom: 7 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 7, background: 'rgba(124,111,240,0.09)', border: '1px solid rgba(124,111,240,0.22)', fontSize: 11, color: 'var(--blue)' }}>
+                <Paperclip size={9} /> {attachedFile.name}
+                <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', padding: 0, display: 'flex', opacity: 0.7, marginLeft: 2 }}>
+                  <X size={9} />
+                </button>
+              </span>
+            </div>
+          )}
+
+          {/* Unified pill input */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 0, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 6px 5px 14px', transition: 'border-color 0.15s, box-shadow 0.15s' }}
+            onFocusCapture={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'rgba(124,111,240,0.45)'; el.style.boxShadow = '0 0 0 3px rgba(124,111,240,0.07)' }}
+            onBlurCapture={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border)'; el.style.boxShadow = 'none' }}
+          >
+            <textarea ref={textareaRef} value={input}
+              onChange={e => { setInput(e.target.value); setError('') }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+              placeholder={editingAgentId ? `What would you like to change in "${editingAgentName}"?` : 'Describe the agent you want to build…'}
+              rows={1}
+              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', padding: '6px 0', fontSize: 13, color: 'var(--text)', fontFamily: 'inherit', lineHeight: 1.55, overflowY: 'hidden' }}
+            />
+            <input ref={fileInputRef} type="file" accept=".txt,.md,.csv,.json,.xml" style={{ display: 'none' }} onChange={handleFileAttach} />
+            <button onClick={() => fileInputRef.current?.click()} title="Attach file"
+              style={{ width: 32, height: 32, borderRadius: 9, border: 'none', background: 'transparent', color: attachedFile ? 'var(--blue)' : 'var(--text3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color 0.15s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--blue)')}
+              onMouseLeave={e => (e.currentTarget.style.color = attachedFile ? 'var(--blue)' : 'var(--text3)')}
+            >
+              <Paperclip size={13} />
+            </button>
+            <button onClick={() => sendMessage()} disabled={!input.trim() || streaming}
+              style={{ width: 34, height: 34, borderRadius: 10, border: 'none', flexShrink: 0, background: !input.trim() || streaming ? 'rgba(124,111,240,0.12)' : 'var(--blue)', color: !input.trim() || streaming ? 'rgba(124,111,240,0.4)' : '#fff', cursor: !input.trim() || streaming ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, color 0.15s' }}>
+              <Send size={13} />
+            </button>
           </div>
-        )}
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', maxWidth: 800, margin: '0 auto' }}>
-          {/* File attach button */}
-          <button onClick={() => fileInputRef.current?.click()}
-            title="Attach a file for context"
-            style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface2)', color: attachedFile ? 'var(--blue)' : 'var(--text3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Paperclip size={14} />
-          </button>
-          <input ref={fileInputRef} type="file" accept=".txt,.md,.csv,.json,.xml" style={{ display: 'none' }} onChange={handleFileAttach} />
-
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={e => { setInput(e.target.value); setError('') }}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-            placeholder={editingAgentId ? `Tell me what to change in "${editingAgentName}"…` : 'Describe the agent you want to build…'}
-            rows={1}
-            style={{
-              flex: 1, padding: '10px 14px', borderRadius: 12,
-              border: '1px solid var(--border)', background: 'var(--surface2)',
-              color: 'var(--text)', fontSize: 14, resize: 'none', outline: 'none',
-              fontFamily: 'inherit', lineHeight: 1.5, overflowY: 'hidden',
-            }}
-          />
-          <button onClick={() => sendMessage()} disabled={!input.trim() || streaming}
-            style={{
-              width: 42, height: 42, borderRadius: 12, border: 'none', flexShrink: 0,
-              background: !input.trim() || streaming ? 'var(--surface2)' : 'var(--blue)',
-              color: !input.trim() || streaming ? 'var(--text3)' : '#fff',
-              cursor: !input.trim() || streaming ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-            <Send size={15} />
-          </button>
+          <p style={{ textAlign: 'center', fontSize: 10, color: 'var(--text3)', marginTop: 5, opacity: 0.7 }}>
+            Enter to send · Shift+Enter for new line · Attach .txt .csv .json
+          </p>
         </div>
-        <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-          Enter to send · Shift+Enter for new line · Attach .txt .csv .json for context
-        </p>
       </div>
 
       <style>{`
-        @keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeUp   { from { opacity:0; transform:translateY(7px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes pulse    { 0%,100% { opacity:0.25; transform:scale(0.75) } 50% { opacity:1; transform:scale(1) } }
+        @keyframes spin     { to { transform:rotate(360deg) } }
+        @keyframes blink    { 0%,100% { opacity:1 } 50% { opacity:0 } }
       `}</style>
     </div>
   )
