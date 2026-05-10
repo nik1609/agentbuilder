@@ -32,7 +32,7 @@ async function callGoogle(opts: LLMCallOptions): Promise<LLMResult> {
     model: opts.model ?? 'gemini-2.5-flash',
     generationConfig: {
       temperature: opts.temperature ?? 0.7,
-      maxOutputTokens: opts.maxTokens ?? 4096,
+      ...(opts.maxTokens !== undefined ? { maxOutputTokens: opts.maxTokens } : {}),
       topP: 1,
     },
     safetySettings: [
@@ -90,7 +90,8 @@ async function callOpenAICompatible(opts: LLMCallOptions): Promise<LLMResult> {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model: opts.model ?? 'gpt-4o-mini', messages,
-        temperature: opts.temperature ?? 0.7, max_tokens: opts.maxTokens ?? 4096,
+        temperature: opts.temperature ?? 0.7,
+        ...(opts.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
         stream: true,
       }),
       signal: AbortSignal.timeout(opts.timeout ?? 60000),
@@ -126,7 +127,7 @@ async function callOpenAICompatible(opts: LLMCallOptions): Promise<LLMResult> {
       model: opts.model ?? 'gpt-4o-mini',
       messages,
       temperature: opts.temperature ?? 0.7,
-      max_tokens: opts.maxTokens ?? 4096,
+      ...(opts.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
     }),
     signal: AbortSignal.timeout(opts.timeout ?? 60000),
   })
@@ -152,7 +153,7 @@ async function callAnthropic(opts: LLMCallOptions): Promise<LLMResult> {
 
   const body: Record<string, unknown> = {
     model: opts.model ?? 'claude-sonnet-4-6',
-    max_tokens: opts.maxTokens ?? 4096,
+    max_tokens: opts.maxTokens ?? 8192, // Anthropic requires max_tokens; default to 8192
     temperature: opts.temperature ?? 0.7,
     messages: [{ role: 'user', content: opts.userMessage }],
   }
