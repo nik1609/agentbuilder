@@ -7,7 +7,7 @@ const PROTECTED = [
   '/datatables', '/memory', '/prompts', '/guardrails',
 ]
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Only protect dashboard routes (not API routes)

@@ -26,11 +26,20 @@ export default function SignupPage() {
   const signUpWithGoogle = async () => {
     setGoogleLoading(true)
     setError('')
-    const supabase = createSupabaseBrowserClient()
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/api/auth/callback` },
-    })
+    try {
+      const supabase = createSupabaseBrowserClient()
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/api/auth/callback` },
+      })
+      if (oauthError) {
+        setError(oauthError.message)
+        setGoogleLoading(false)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not connect to auth server. Check your internet connection.')
+      setGoogleLoading(false)
+    }
   }
 
   const signUp = async (e: React.FormEvent) => {

@@ -28,11 +28,21 @@ export default function LoginPage() {
   const signInWithGoogle = async () => {
     setGoogleLoading(true)
     setError('')
-    const supabase = createSupabaseBrowserClient()
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/api/auth/callback` },
-    })
+    try {
+      const supabase = createSupabaseBrowserClient()
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/api/auth/callback` },
+      })
+      if (oauthError) {
+        setError(oauthError.message)
+        setGoogleLoading(false)
+      }
+      // On success the browser navigates away — leave loading=true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not connect to auth server. Check your internet connection.')
+      setGoogleLoading(false)
+    }
   }
 
   const signInWithEmail = async (e: React.FormEvent) => {
