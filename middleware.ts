@@ -31,9 +31,12 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // getSession reads from the cookie — no network call, no refresh_token hang.
+  // getUser() makes a live Supabase API call on every request which causes the
+  // /auth/v1/token?grant_type=refresh_token delay seen in the network tab.
+  const { data: { session } } = await supabase.auth.getSession()
 
-  if (!user) {
+  if (!session) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', pathname)
