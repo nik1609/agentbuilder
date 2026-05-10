@@ -205,7 +205,7 @@ export async function POST(req: NextRequest) {
           systemPrompt,
           userMessage,
           temperature: 0.7,
-          maxTokens: 8192,
+          maxTokens: 32000,
           onToken: (token) => send({ type: 'token', token }),
         })
         send({ type: 'done' })
