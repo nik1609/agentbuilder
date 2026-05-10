@@ -9,23 +9,37 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ runI
   const { runId } = await params
   const db = createAdminClient()
 
-  let { data, error } = await db
-    .from('agent_runs')
-    .select('id, agent_id, agent_name, status, tokens, latency_ms, cost_usd, error, trace, input, output, created_at, api_key_prefix')
-    .eq('id', runId)
-    .eq('user_id', userId)
-    .single()
+  const SELECT_FULL = 'id, agent_id, agent_name, status, tokens, latency_ms, cost_usd, error, trace, input, output, created_at, api_key_prefix'
+  const SELECT_NO_COST = 'id, agent_id, agent_name, status, tokens, latency_ms, error, trace, input, output, created_at, api_key_prefix'
 
-  if (error?.code === '42703' || error?.message?.includes('cost_usd')) {
-    ;({ data, error } = await db
-      .from('agent_runs')
-      .select('id, agent_id, agent_name, status, tokens, latency_ms, error, trace, input, output, created_at, api_key_prefix')
-      .eq('id', runId)
-      .eq('user_id', userId)
-      .single())
+  async function fetchRun(select: string, extraFilter?: { field: string; value: string }) {
+    let q = db.from('agent_runs').select(select).eq('id', runId)
+    if (extraFilter) q = q.eq(extraFilter.field, extraFilter.value)
+    return q.single()
   }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 })
+  // Primary: find by run ID + user_id
+  let { data, error } = await fetchRun(SELECT_FULL, { field: 'user_id', value: userId })
+  if (error?.code === '42703' || error?.message?.includes('cost_usd')) {
+    ;({ data, error } = await fetchRun(SELECT_NO_COST, { field: 'user_id', value: userId }))
+  }
+
+  // Fallback: run may have been created with null user_id (terminal/API key runs, legacy).
+  // Allow access if the user owns the agent the run belongs to.
+  if (!data) {
+    const { data: runMeta } = await db.from('agent_runs').select('agent_id').eq('id', runId).single()
+    if (runMeta?.agent_id) {
+      const { data: ownedAgent } = await db.from('agents').select('id').eq('id', runMeta.agent_id).eq('user_id', userId).single()
+      if (ownedAgent) {
+        ;({ data, error } = await fetchRun(SELECT_FULL))
+        if (error?.code === '42703' || error?.message?.includes('cost_usd')) {
+          ;({ data, error } = await fetchRun(SELECT_NO_COST))
+        }
+      }
+    }
+  }
+
+  if (error || !data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(data)
 }
 

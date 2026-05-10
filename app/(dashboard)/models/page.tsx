@@ -23,6 +23,14 @@ const PROVIDER_MODELS: Record<string, string[]> = {
   ollama: ['gemma3:4b', 'gemma3:12b', 'llama3.2', 'llama3.1', 'mistral', 'mixtral', 'codellama', 'phi3', 'gemma2', 'qwen2.5'],
 }
 
+const OPENAI_COMPATIBLE_PRESETS: { label: string; url: string; keyPlaceholder: string }[] = [
+  { label: 'OpenAI',      url: 'https://api.openai.com/v1',          keyPlaceholder: 'sk-...' },
+  { label: 'Groq',        url: 'https://api.groq.com/openai/v1',     keyPlaceholder: 'gsk_...' },
+  { label: 'Together AI', url: 'https://api.together.xyz/v1',        keyPlaceholder: 'your-together-key' },
+  { label: 'Mistral AI',  url: 'https://api.mistral.ai/v1',          keyPlaceholder: 'your-mistral-key' },
+  { label: 'Ollama',      url: 'http://localhost:11434/v1',           keyPlaceholder: 'ollama' },
+]
+
 const PROVIDER_META: Record<string, { color: string; bg: string; apiKeyLabel: string; apiKeyPlaceholder: string; baseUrlDefault: string; note: string }> = {
   google:             { color: '#4285f4', bg: 'rgba(66,133,244,0.1)',   apiKeyLabel: 'Gemini API Key',      apiKeyPlaceholder: 'AIza... (leave blank to use GEMINI_API_KEY env var)', baseUrlDefault: '', note: 'Leave blank to use the GEMINI_API_KEY environment variable. Or paste your key from aistudio.google.com directly here — it stays in your account only.' },
   anthropic:          { color: '#d97706', bg: 'rgba(217,119,6,0.1)',    apiKeyLabel: 'Anthropic API Key',   apiKeyPlaceholder: 'sk-ant-...',      baseUrlDefault: '', note: 'Get your key from console.anthropic.com. Leave blank to use ANTHROPIC_API_KEY env var.' },
@@ -178,6 +186,25 @@ export default function ModelsPage() {
 
             {(form.provider === 'openai-compatible' || form.provider === 'ollama') && (
               <Field label="Base URL">
+                {form.provider === 'openai-compatible' && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 7 }}>
+                    {OPENAI_COMPATIBLE_PRESETS.map(p => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => set('baseUrl', p.url)}
+                        style={{
+                          padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                          border: '1px solid var(--border)',
+                          background: form.baseUrl === p.url ? 'var(--blue)' : 'var(--surface2)',
+                          color: form.baseUrl === p.url ? '#fff' : 'var(--text3)',
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <input value={form.baseUrl} onChange={e => set('baseUrl', e.target.value)}
                   placeholder={meta.baseUrlDefault || 'https://...'}
                   style={inputStyle} />

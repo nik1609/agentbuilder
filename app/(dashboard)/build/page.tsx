@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Send, Wand2, User, ArrowRight, AlertCircle, Wrench, Table2, CheckCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { Send, Wand2, User, ArrowRight, AlertCircle, Wrench, Table2, CheckCircle, ExternalLink, Loader2, Plus, Clock, ChevronDown, Trash2, Bot } from 'lucide-react'
 
 interface Model { id: string; name: string; provider: string; model_id: string }
 interface Message { role: 'user' | 'assistant'; content: string }
@@ -15,6 +15,36 @@ interface BuildPlan {
   schema: { nodes: unknown[]; edges: unknown[] }
 }
 type ImportStep = { label: string; status: 'pending' | 'done' | 'active' }
+
+interface BuildSession {
+  id: string
+  name: string
+  messages: Message[]
+  agentId?: string
+  agentName?: string
+  createdAt: string
+  updatedAt: string
+}
+
+const STORAGE_KEY = 'agenthub_build_sessions'
+const MAX_SESSIONS = 20
+
+function loadSessions(): BuildSession[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch { return [] }
+}
+
+function saveSessions(sessions: BuildSession[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, MAX_SESSIONS))) } catch {}
+}
+
+function stripCodeBlocks(text: string): string {
+  // Remove code blocks from history to prevent context bloat
+  return text.replace(/```[\w]*\n?[\s\S]*?```/g, '[build plan omitted]').trim()
+}
 
 const WELCOME = `Hi! I'm your agent design assistant. Describe what you want to build and I'll design the full flow — including any tools (web search, HTTP) and datatables you need — then generate everything in one click.
 
@@ -54,7 +84,6 @@ function tryExtractPlan(code: string): BuildPlan | null {
   return null
 }
 
-// Render plain text with basic **bold** support
 function TextSpan({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*\n]+\*\*)/)
   return (
@@ -68,10 +97,22 @@ function TextSpan({ text }: { text: string }) {
   )
 }
 
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
 export default function BuildPage() {
   const router = useRouter()
   const [models, setModels] = useState<Model[]>([])
   const [selectedModel, setSelectedModel] = useState('')
+  const [sessions, setSessions] = useState<BuildSession[]>([])
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: WELCOME }])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -79,24 +120,99 @@ export default function BuildPage() {
   const [importSteps, setImportSteps] = useState<ImportStep[]>([])
   const [openingIdx, setOpeningIdx] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [showSessionList, setShowSessionList] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const sessionListRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetch('/api/models').then(r => r.json()).then(d => { if (Array.isArray(d)) setModels(d) }).catch(() => {})
+    const saved = loadSessions()
+    setSessions(saved)
   }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
     ta.style.height = 'auto'
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'
   }, [input])
+
+  // Close session list on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (sessionListRef.current && !sessionListRef.current.contains(e.target as Node)) {
+        setShowSessionList(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  function saveCurrentSession(msgs: Message[], agentId?: string, agentName?: string) {
+    if (msgs.length <= 1) return // don't save sessions with only welcome message
+    const userMessages = msgs.filter(m => m.role === 'user')
+    if (userMessages.length === 0) return
+
+    const name = userMessages[0].content.slice(0, 60) + (userMessages[0].content.length > 60 ? '…' : '')
+    const now = new Date().toISOString()
+
+    setSessions(prev => {
+      const existing = currentSessionId ? prev.find(s => s.id === currentSessionId) : null
+      let updated: BuildSession[]
+
+      if (existing) {
+        updated = prev.map(s => s.id === currentSessionId
+          ? { ...s, name, messages: msgs, agentId: agentId ?? s.agentId, agentName: agentName ?? s.agentName, updatedAt: now }
+          : s
+        )
+      } else {
+        const newSession: BuildSession = {
+          id: crypto.randomUUID(),
+          name,
+          messages: msgs,
+          agentId,
+          agentName,
+          createdAt: now,
+          updatedAt: now,
+        }
+        setCurrentSessionId(newSession.id)
+        updated = [newSession, ...prev]
+      }
+
+      saveSessions(updated)
+      return updated
+    })
+  }
+
+  function startNewSession() {
+    setCurrentSessionId(null)
+    setMessages([{ role: 'assistant', content: WELCOME }])
+    setInput('')
+    setError('')
+    setShowSessionList(false)
+  }
+
+  function loadSession(session: BuildSession) {
+    setCurrentSessionId(session.id)
+    setMessages(session.messages)
+    setError('')
+    setShowSessionList(false)
+  }
+
+  function deleteSession(sessionId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setSessions(prev => {
+      const updated = prev.filter(s => s.id !== sessionId)
+      saveSessions(updated)
+      return updated
+    })
+    if (currentSessionId === sessionId) startNewSession()
+  }
 
   const sendMessage = async () => {
     const text = input.trim()
@@ -108,17 +224,23 @@ export default function BuildPage() {
     setMessages([...withUser, { role: 'assistant', content: '' }])
     setStreaming(true)
 
+    // Strip code blocks from history to avoid context bloat
+    const historyForApi = withUser.map(m => ({
+      role: m.role,
+      content: m.role === 'assistant' ? stripCodeBlocks(m.content) : m.content,
+    }))
+
     let acc = ''
     try {
       const res = await fetch('/api/build-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: withUser,
+          messages: historyForApi,
           modelName: selectedModel || undefined,
         }),
       })
-      if (!res.ok || !res.body) throw new Error('Request failed')
+      if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`)
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -149,13 +271,17 @@ export default function BuildPage() {
           }
         }
       }
+
+      const finalMsgs: Message[] = [...withUser, { role: 'assistant', content: acc }]
+      setMessages(finalMsgs)
+      saveCurrentSession(finalMsgs)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Something went wrong'
       setError(msg)
       setMessages(prev => {
         const u = [...prev]
         if (u[u.length - 1]?.role === 'assistant' && u[u.length - 1].content === '') {
-          u.pop() // remove empty assistant placeholder
+          u.pop()
         }
         return u
       })
@@ -182,21 +308,15 @@ export default function BuildPage() {
     try {
       let stepIdx = 0
 
-      // 1. Create tools
       for (const tool of plan.tools) {
         setStep(stepIdx, 'active')
         const res = await fetch('/api/tools', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name: tool.name,
-            description: tool.description ?? '',
-            type: tool.type,
-            method: tool.method ?? 'GET',
-            endpoint: tool.endpoint ?? '',
-            headers: tool.headers ?? {},
-            inputSchema: tool.inputSchema ?? {},
-            timeout: 10000,
+            name: tool.name, description: tool.description ?? '', type: tool.type,
+            method: tool.method ?? 'GET', endpoint: tool.endpoint ?? '',
+            headers: tool.headers ?? {}, inputSchema: tool.inputSchema ?? {}, timeout: 10000,
           }),
         })
         if (!res.ok) {
@@ -207,7 +327,6 @@ export default function BuildPage() {
         stepIdx++
       }
 
-      // 2. Create datatables — and wire datatable_id into any tools + schema nodes that reference them by name
       const datatableIdMap: Record<string, string> = {}
       for (const dt of plan.datatables) {
         setStep(stepIdx, 'active')
@@ -226,7 +345,6 @@ export default function BuildPage() {
         stepIdx++
       }
 
-      // Patch schema: inject datatable_id into tool nodes whose inputSchema references a datatable by name
       const patchedSchema = JSON.parse(JSON.stringify(plan.schema)) as typeof plan.schema
       const schemaNodes = (patchedSchema?.nodes ?? []) as Array<{ type?: string; data?: Record<string, unknown> }>
       for (const node of schemaNodes) {
@@ -248,7 +366,6 @@ export default function BuildPage() {
         }
       }
 
-      // 3. Create agent with patched schema
       setStep(stepIdx, 'active')
       const res = await fetch('/api/agents', {
         method: 'POST',
@@ -261,6 +378,9 @@ export default function BuildPage() {
       }
       const created = await res.json() as { id: string }
       setStep(stepIdx, 'done')
+
+      // Save session with linked agent
+      saveCurrentSession(messages, created.id, plan.name)
 
       await new Promise(r => setTimeout(r, 600))
       router.push(`/builder/${created.id}`)
@@ -285,6 +405,7 @@ export default function BuildPage() {
         throw new Error(err.error ?? 'Agent creation failed')
       }
       const created = await res.json() as { id: string }
+      saveCurrentSession(messages, created.id, plan.name)
       router.push(`/builder/${created.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open in builder')
@@ -293,32 +414,107 @@ export default function BuildPage() {
     }
   }
 
+  const currentSession = sessions.find(s => s.id === currentSessionId)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' }}>
 
       {/* Header */}
-      <div style={{ padding: '20px 32px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #7c6ff0, #b080f8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wand2 size={13} color="white" />
-            </div>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.3px' }}>Build via Chat</h1>
+      <div style={{ padding: '16px 32px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #7c6ff0, #b080f8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Wand2 size={13} color="white" />
           </div>
-          <p style={{ fontSize: 12, color: 'var(--text2)', paddingLeft: 36 }}>Describe your agent — I&apos;ll design the flow and generate importable JSON</p>
+          <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>Build via Chat</h1>
+        </div>
+
+        {/* Session picker */}
+        <div ref={sessionListRef} style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
+          <button
+            onClick={() => setShowSessionList(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)',
+              background: 'var(--surface2)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', outline: 'none',
+            }}
+          >
+            <Clock size={12} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentSession ? currentSession.name : 'New build'}
+            </span>
+            <ChevronDown size={12} style={{ flexShrink: 0 }} />
+          </button>
+
+          {showSessionList && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 200,
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.3)', overflow: 'hidden', minWidth: 300,
+            }}>
+              <button
+                onClick={startNewSession}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 14px', border: 'none', background: 'transparent',
+                  color: 'var(--blue)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                  borderBottom: '1px solid var(--border)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Plus size={13} /> New build
+              </button>
+
+              {sessions.length === 0 ? (
+                <div style={{ padding: '14px', fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>No previous builds yet</div>
+              ) : (
+                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                  {sessions.map(s => (
+                    <div
+                      key={s.id}
+                      onClick={() => loadSession(s)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', cursor: 'pointer',
+                        background: s.id === currentSessionId ? 'var(--surface2)' : 'transparent',
+                        borderBottom: '1px solid var(--border2)',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = s.id === currentSessionId ? 'var(--surface2)' : 'transparent')}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{timeAgo(s.updatedAt)}</span>
+                          {s.agentName && (
+                            <span style={{ fontSize: 10, color: '#22d79a', background: 'rgba(34,215,154,0.1)', border: '1px solid rgba(34,215,154,0.2)', borderRadius: 4, padding: '0 5px' }}>
+                              <Bot size={8} style={{ display: 'inline', marginRight: 2 }} />{s.agentName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={e => deleteSession(s.id, e)}
+                        style={{ padding: 4, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, display: 'flex' }}
+                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--red)'; e.currentTarget.style.background = 'rgba(232,85,85,0.1)' }}
+                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Model picker */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
           <span style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>Model</span>
           <select
             value={selectedModel}
             onChange={e => setSelectedModel(e.target.value)}
-            style={{
-              padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)',
-              background: 'var(--surface2)', color: 'var(--text)', fontSize: 12,
-              cursor: 'pointer', outline: 'none', minWidth: 170,
-            }}
+            style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12, cursor: 'pointer', outline: 'none', minWidth: 170 }}
           >
             <option value="">Default (Gemini 2.5 Flash)</option>
             {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
@@ -335,22 +531,16 @@ export default function BuildPage() {
 
           return (
             <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexDirection: isUser ? 'row-reverse' : 'row' }}>
-              {/* Avatar */}
               <div style={{
                 width: 30, height: 30, borderRadius: 9, flexShrink: 0, marginTop: 2,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: isUser ? 'rgba(124,111,240,0.15)' : 'rgba(124,111,240,0.08)',
                 border: `1px solid ${isUser ? 'rgba(124,111,240,0.3)' : 'var(--border)'}`,
               }}>
-                {isUser
-                  ? <User size={13} color="var(--blue)" />
-                  : <Wand2 size={13} color="var(--blue)" />
-                }
+                {isUser ? <User size={13} color="var(--blue)" /> : <Wand2 size={13} color="var(--blue)" />}
               </div>
 
-              {/* Content */}
               <div style={{ maxWidth: 700, minWidth: 0 }}>
-                {/* Empty streaming state */}
                 {isStreamingThis && msg.content === '' && (
                   <div style={{ padding: '12px 16px', borderRadius: '4px 14px 14px 14px', background: 'var(--surface)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)', display: 'inline-block', animation: 'pulse 1.2s ease-in-out infinite' }} />
@@ -382,13 +572,11 @@ export default function BuildPage() {
                     )
                   }
 
-                  // Code block
                   const plan = part.lang === 'json' ? tryExtractPlan(part.value) : null
                   const isImporting = importingIdx === idx
 
                   return (
                     <div key={pi} style={{ marginBottom: pi < parts.length - 1 ? 8 : 0, borderRadius: 12, border: `1px solid ${plan ? 'rgba(124,111,240,0.4)' : 'var(--border)'}`, overflow: 'hidden', background: 'var(--surface)' }}>
-                      {/* Code block header */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: plan ? 'rgba(124,111,240,0.08)' : 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           {plan && <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)' }} />}
@@ -416,32 +604,23 @@ export default function BuildPage() {
                               onClick={() => openInBuilder(idx, plan)}
                               disabled={isImporting || openingIdx === idx}
                               style={{
-                                display: 'flex', alignItems: 'center', gap: 5,
-                                padding: '5px 12px', borderRadius: 7,
-                                border: '1px solid var(--border)',
-                                background: 'var(--surface2)',
-                                color: 'var(--text2)',
-                                fontSize: 12, fontWeight: 600,
-                                cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
+                                display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7,
+                                border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text2)',
+                                fontSize: 12, fontWeight: 600, cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
                                 opacity: (isImporting || openingIdx === idx) ? 0.6 : 1,
                               }}
                             >
-                              {openingIdx === idx
-                                ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                                : <ExternalLink size={12} />
-                              }
+                              {openingIdx === idx ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ExternalLink size={12} />}
                               Open in Builder
                             </button>
                             <button
                               onClick={() => importPlan(idx, plan)}
                               disabled={isImporting || openingIdx === idx}
                               style={{
-                                display: 'flex', alignItems: 'center', gap: 5,
-                                padding: '5px 12px', borderRadius: 7, border: 'none',
+                                display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 7, border: 'none',
                                 background: (isImporting || openingIdx === idx) ? 'var(--surface2)' : 'var(--blue)',
                                 color: (isImporting || openingIdx === idx) ? 'var(--text3)' : '#fff',
-                                fontSize: 12, fontWeight: 600,
-                                cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
+                                fontSize: 12, fontWeight: 600, cursor: (isImporting || openingIdx === idx) ? 'not-allowed' : 'pointer',
                               }}
                             >
                               <ArrowRight size={12} />
@@ -451,7 +630,6 @@ export default function BuildPage() {
                         )}
                       </div>
 
-                      {/* Import progress steps */}
                       {isImporting && importSteps.length > 0 && (
                         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 5 }}>
                           {importSteps.map((step, si) => (
@@ -481,7 +659,6 @@ export default function BuildPage() {
           )
         })}
 
-        {/* Error banner */}
         {error && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, background: 'rgba(232,85,85,0.08)', border: '1px solid rgba(232,85,85,0.25)' }}>
             <AlertCircle size={13} color="var(--red)" />

@@ -274,7 +274,9 @@ export default function RunsPage() {
                   {run.cost_usd ? formatCost(run.cost_usd) : '—'}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, color: 'var(--text3)', fontFamily: 'monospace' }}>
-                  {run.api_key_prefix ? `key:${run.api_key_prefix}` : 'builder'}
+                  {run.api_key_prefix
+                    ? `key:${run.api_key_prefix.slice(0, 12)}${run.api_key_prefix.length > 12 ? '…' : ''}`
+                    : 'builder'}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, color: 'var(--text3)' }}>
                   {new Date(run.created_at).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
