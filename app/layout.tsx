@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Playfair_Display } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', weight: ['400', '500', '600'] })
+const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair', style: ['normal', 'italic'], weight: ['400', '600', '700', '800'] })
 
 export const metadata: Metadata = {
   title: { default: "AgentHub", template: "%s · AgentHub" },
@@ -28,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('agenthub-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark')}catch(e){}})()` }}
         />
       </head>
-      <body className="min-h-full bg-[#0a0a12] text-[#e8e6f8] antialiased">{children}</body>
+      <body className={`${playfair.variable} min-h-full bg-[#0a0a12] text-[#e8e6f8] antialiased`}>{children}</body>
     </html>
   );
 }

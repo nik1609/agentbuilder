@@ -30,7 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const signOut = async () => {
     const supabase = createSupabaseBrowserClient()
     await supabase.auth.signOut()
-    router.push('/login')
+    router.push('/')
   }
 
   const w = collapsed ? 64 : 220
