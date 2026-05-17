@@ -690,8 +690,8 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
           </div>
           </div>{/* end studio+canvas row */}
 
-          {/* Chat thread — conversation history + streaming */}
-          {(chatMessages.length > 0 || running) && (
+          {/* Chat thread + run bar — HIDDEN for now, re-enable when needed */}
+          {false && (chatMessages.length > 0 || running) && (
             <div className="flex-shrink-0 border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface)', maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', borderBottom: '1px solid var(--border2)', flexShrink: 0 }}>
@@ -780,7 +780,8 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
             </div>
           )}
 
-          {/* Input / Run bar */}
+          {/* Input / Run bar — HIDDEN for now, re-enable when needed */}
+          {false && (
           <div className="flex-shrink-0 border-t" style={{ borderColor: pendingAction?.type === 'hitl' ? 'rgba(245,160,32,0.5)' : pendingAction?.type === 'clarify' ? 'rgba(244,114,182,0.5)' : 'var(--border)', background: 'var(--surface)' }}>
             {pendingAction?.type === 'hitl' && (
               <div style={{ padding: '5px 12px 0', fontSize: 10, color: 'var(--orange)', fontWeight: 600 }}>
@@ -869,6 +870,7 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
               )}
             </div>
           </div>
+          )}{/* end hidden run bar */}
 
           {/* Trace */}
           <TracePanel trace={trace} status={runStatus} tokens={runResult?.tokens} latencyMs={runResult?.latencyMs} />
