@@ -6,7 +6,9 @@ export default function ThemeToggle() {
   const [dark, setDark] = useState<boolean | null>(null)
 
   useEffect(() => {
-    setDark(localStorage.getItem('agenthub-theme') !== 'light')
+    const isDark = localStorage.getItem('agenthub-theme') === 'dark'
+    setDark(isDark)
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
   }, [])
 
   const toggle = () => {
@@ -21,11 +23,17 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="w-8 h-8 flex items-center justify-center rounded-lg border transition-colors"
-      style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--surface2)' }}
       title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 32, height: 32, borderRadius: 8,
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        color: 'var(--text3)', transition: 'background 0.15s, color 0.15s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)'; e.currentTarget.style.color = 'var(--text2)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text3)' }}
     >
-      {dark ? <Sun size={14} /> : <Moon size={14} />}
+      {dark ? <Sun size={15} /> : <Moon size={15} />}
     </button>
   )
 }

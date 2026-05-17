@@ -24,10 +24,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ runI
     ;({ data, error } = await fetchRun(SELECT_NO_COST, { field: 'user_id', value: userId }))
   }
 
-  // Fallback: run may have been created with null user_id (terminal/API key runs, legacy).
+  // Fallback: run may have been created with a different user_id (terminal/API key/test mode).
   // Allow access if the user owns the agent the run belongs to.
   if (!data) {
-    const { data: runMeta } = await db.from('agent_runs').select('agent_id').eq('id', runId).single()
+    const { data: runMeta } = await db.from('agent_runs').select('agent_id, user_id').eq('id', runId).single()
     if (runMeta?.agent_id) {
       const { data: ownedAgent } = await db.from('agents').select('id').eq('id', runMeta.agent_id).eq('user_id', userId).single()
       if (ownedAgent) {

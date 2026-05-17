@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { X, Brain, Wrench, GitBranch, UserCheck, HelpCircle, ChevronDown, Plus, Trash2, Shield, Database, Search, Globe, ArrowRightLeft, RefreshCw, GitFork, Merge, ToggleLeft } from 'lucide-react'
+import { X, Brain, Wrench, GitBranch, UserCheck, HelpCircle, ChevronDown, Plus, Trash2, Shield, Database, Search, Globe, ArrowRightLeft, Shuffle, RefreshCw, GitFork, Merge, ToggleLeft, Copy, Check } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { NodeData, MemorySource } from '@/types/agent'
 import { useRegistry } from '@/lib/hooks/useRegistry'
@@ -20,27 +20,31 @@ interface NodeConfigPanelProps {
   onUpdate: (data: Partial<NodeData>) => void
   onClose: () => void
   onAfterToolSave?: () => void
+  onAddEdge?: (sourceHandle: string, targetNodeId: string, label: string) => void
+  onRemoveEdge?: (sourceHandle: string) => void
+  outgoingEdges?: { sourceHandle?: string | null; target: string }[]
 }
 
 
 const NODE_META: Record<string, { color: string; bg: string; icon: React.ElementType; label: string }> = {
-  input:       { color: '#64b5f6', bg: 'rgba(100,181,246,0.1)', icon: ArrowRightLeft, label: 'I/O Node' },
-  passthrough: { color: '#64b5f6', bg: 'rgba(100,181,246,0.1)', icon: ArrowRightLeft, label: 'I/O Node' },
-  llm:         { color: '#7c6ff0', bg: 'rgba(124,111,240,0.1)', icon: Brain,          label: 'LLM Node' },
-  tool:        { color: '#22d79a', bg: 'rgba(34,215,154,0.1)',  icon: Wrench,         label: 'Tool Node' },
-  condition:   { color: '#f5a020', bg: 'rgba(245,160,32,0.1)',  icon: GitBranch,      label: 'Condition Node' },
-  hitl:        { color: '#b080f8', bg: 'rgba(176,128,248,0.1)', icon: UserCheck,      label: 'HITL Node' },
-  clarify:     { color: '#f472b6', bg: 'rgba(244,114,182,0.1)', icon: HelpCircle,    label: 'Clarify Node' },
-  loop:        { color: '#ff7043', bg: 'rgba(255,112,67,0.1)',  icon: RefreshCw,      label: 'Loop Node' },
-  fork:        { color: '#26c6da', bg: 'rgba(38,198,218,0.1)',  icon: GitFork,        label: 'Fork Node' },
-  join:        { color: '#26c6da', bg: 'rgba(38,198,218,0.1)',  icon: Merge,          label: 'Join Node' },
-  switch:      { color: '#ffd600', bg: 'rgba(255,214,0,0.1)',   icon: ToggleLeft,     label: 'Switch Node' },
+  input:       { color: '#5ED7F7', bg: 'rgba(94,215,247,0.1)',   icon: ArrowRightLeft, label: 'Start' },
+  output:      { color: '#6B7280', bg: 'rgba(107,114,128,0.1)',  icon: ArrowRightLeft, label: 'End' },
+  passthrough: { color: '#64b5f6', bg: 'rgba(100,181,246,0.1)',  icon: Shuffle,        label: 'Transform' },
+  llm:         { color: '#7c6ff0', bg: 'rgba(124,111,240,0.1)',  icon: Brain,          label: 'AI Step' },
+  tool:        { color: '#22d79a', bg: 'rgba(34,215,154,0.1)',   icon: Wrench,         label: 'Action' },
+  condition:   { color: '#f5a020', bg: 'rgba(245,160,32,0.1)',   icon: GitBranch,      label: 'Branch' },
+  hitl:        { color: '#b080f8', bg: 'rgba(176,128,248,0.1)',  icon: UserCheck,      label: 'Human Review' },
+  clarify:     { color: '#f472b6', bg: 'rgba(244,114,182,0.1)',  icon: HelpCircle,     label: 'Ask User' },
+  loop:        { color: '#ff7043', bg: 'rgba(255,112,67,0.1)',   icon: RefreshCw,      label: 'Loop' },
+  fork:        { color: '#26c6da', bg: 'rgba(38,198,218,0.1)',   icon: GitFork,        label: 'Fork' },
+  join:        { color: '#26c6da', bg: 'rgba(38,198,218,0.1)',   icon: Merge,          label: 'Join' },
+  switch:      { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',   icon: ToggleLeft,     label: 'Switch' },
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, accentColor }: { label: string; children: React.ReactNode; accentColor?: string }) {
   return (
     <div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: accentColor ?? 'var(--text3)', marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase', opacity: accentColor ? 0.8 : 1 }}>
         {label}
       </div>
       {children}
@@ -111,7 +115,7 @@ function RetryConfig({ color, bg, enabled, maxAttempts, backoffMs, retryOn, onTo
   )
 }
 
-export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, onClose, onAfterToolSave }: NodeConfigPanelProps) {
+export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, onClose, onAfterToolSave, onAddEdge, onRemoveEdge, outgoingEdges = [] }: NodeConfigPanelProps) {
   const { items: tools, saving: toolSaving, update: updateTool, create: createTool } = useRegistry<Tool>('/api/tools')
   const { items: prompts }      = useRegistry<Prompt>('/api/prompts')
   const { items: modelConfigs } = useRegistry<ModelConfig>('/api/models')
@@ -164,6 +168,7 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   const [switchCases, setSwitchCases]         = useState<{label: string; match: string}[]>((nodeData.cases as {label: string; match: string}[]) ?? [{ label: 'Case A', match: '' }, { label: 'Case B', match: '' }])
   const [switchDefault, setSwitchDefault]     = useState((nodeData.defaultCase as string) ?? '')
   const [switchModel, setSwitchModel]         = useState((nodeData.model as string) ?? '')
+  const [showSwitchHelp, setShowSwitchHelp]   = useState(false)
 
   // Clarify node state
   const [clarifyMode, setClarifyMode]                 = useState<'static' | 'llm'>((nodeData.clarifyMode as 'static' | 'llm') ?? 'llm')
@@ -186,6 +191,8 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   const [toolMaxResults, setToolMaxResults] = useState('5')
   const [toolSaved, setToolSaved]         = useState(false)
   const [compressOutput, setCompressOutput] = useState(!!(nodeData.compressOutput))
+  const [toolPickerOpen, setToolPickerOpen] = useState(false)
+  const [toolPickerSearch, setToolPickerSearch] = useState('')
   const [compressModel, setCompressModel]   = useState((nodeData.compressModel as string) ?? '')
   // Datatable tool state — seeded from inline toolConfig so reopening panel restores correctly
   const [dtId, setDtId]       = useState((_inlineSchema?.datatable_id as string) ?? '')
@@ -193,8 +200,13 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   const [dtPkFilter, setDtPkFilter] = useState((_inlineSchema?.pk_filter as string) ?? '')
   const lastToolId = useRef<string | null>(null)
 
-  // Passthrough / I/O node state
+  // Passthrough / Transform node state
   const [template, setTemplate] = useState((nodeData.template as string) ?? '')
+
+  // Start (input) node state
+  const [inputField, setInputField]     = useState((nodeData.inputField as string) ?? 'message')
+  const [inputDefault, setInputDefault] = useState((nodeData.inputDefault as string) ?? '')
+  const [inputDesc, setInputDesc]       = useState((nodeData.description as string) ?? '')
 
   // When selected tool changes, populate edit state
   useEffect(() => {
@@ -287,18 +299,18 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
 
   const upstreamNodes = allNodes.filter(n => n.id !== nodeId && n.data.nodeType !== 'input' && n.data.nodeType !== 'output')
 
-  // When model configs finish loading, auto-select the first config if no valid model is set
+  // When model configs finish loading, auto-select the first config if no valid model is set.
+  // Covers all three model state vars (AI Step, Branch share `model`; Loop uses `loopModel`; Switch uses `switchModel`).
   const modelConfigsLoaded = useRef(false)
   useEffect(() => {
     if (modelConfigs.length === 0) return
     if (modelConfigsLoaded.current) return
     modelConfigsLoaded.current = true
-    const valid = modelConfigs.some(m => m.name === model)
-    if (!valid) {
-      const first = modelConfigs[0].name
-      setModel(first)
-      onUpdate({ model: first })
-    }
+    const names = modelConfigs.map(m => m.name)
+    const first = modelConfigs[0].name
+    if (!names.includes(model))       { setModel(first);       onUpdate({ model: first }) }
+    if (!names.includes(loopModel))   { setLoopModel(first) }
+    if (!names.includes(switchModel)) { setSwitchModel(first) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelConfigs.length])
 
@@ -328,391 +340,431 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
   }
 
   const meta = NODE_META[nodeData.nodeType ?? ''] ?? NODE_META.llm
+  const [copiedId, setCopiedId] = useState(false)
+  const copyNodeId = () => {
+    navigator.clipboard.writeText(nodeId).then(() => {
+      setCopiedId(true)
+      setTimeout(() => setCopiedId(false), 1500)
+    })
+  }
   const Icon = meta.icon
 
   return (
     <div style={{
-      width: 270, flexShrink: 0, display: 'flex', flexDirection: 'column',
-      background: 'var(--surface)', borderLeft: `2px solid ${meta.color}`, overflow: 'hidden',
+      width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column',
+      background: 'var(--bg)', borderLeft: '1px solid var(--border)', overflow: 'hidden',
     }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '12px 14px', borderBottom: '1px solid var(--border)',
-        background: 'var(--surface)', flexShrink: 0,
-      }}>
-        <div style={{ width: 28, height: 28, borderRadius: 7, background: meta.bg, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={14} style={{ color: meta.color }} />
+      {/* Header — colored top bar + icon + title + close */}
+      <div style={{ flexShrink: 0 }}>
+        {/* Signature color accent bar */}
+        <div style={{ height: 3, background: meta.color, borderRadius: '0 0 2px 2px' }} />
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '11px 14px 10px', borderBottom: '1px solid var(--border)',
+          background: 'var(--bg)',
+        }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: meta.bg, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={14} style={{ color: meta.color }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: meta.color, lineHeight: 1.2 }}>{meta.label}</div>
+            {/* Node ID row: copy icon + full id */}
+            <button
+              onClick={copyNodeId}
+              title={nodeId}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: copiedId ? meta.color : 'var(--text4)', transition: 'color 0.15s', minWidth: 0, maxWidth: '100%' }}
+            >
+              {copiedId ? <Check size={9} style={{ flexShrink: 0 }} /> : <Copy size={9} style={{ flexShrink: 0 }} />}
+              <span style={{ fontSize: 9, fontFamily: 'monospace', letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {nodeId}
+              </span>
+            </button>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, transition: 'background 0.12s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.color = 'var(--text)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface)'; e.currentTarget.style.color = 'var(--text3)' }}
+          >
+            <X size={12} />
+          </button>
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{meta.label}</div>
-          <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'monospace' }}>{nodeId.slice(0, 12)}…</div>
-        </div>
-        <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0 }}>
-          <X size={12} />
-        </button>
       </div>
 
       {/* Fields */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         <Field label="Label">
           <input value={label} onChange={e => { setLabel(e.target.value); onUpdate({ label: e.target.value }) }} style={inputStyle} placeholder="Node label" />
         </Field>
 
-        {/* LLM config */}
-        {nodeData.nodeType === 'llm' && (<>
-          <Field label="Model Config">
-            <div style={{ position: 'relative' }}>
-              <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                <option value="">Default (Gemini 2.5 Flash)</option>
-                {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-              </select>
-              <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-            </div>
-          </Field>
+        {/* ── AI Step (LLM) config ─────────────────────────────────────────── */}
+        {nodeData.nodeType === 'llm' && (() => {
+          const C = meta.color
+          const hasConvMemory = memorySources.some(s => s.type === 'agent_runs')
+          const convMemSrc = memorySources.find(s => s.type === 'agent_runs')
+          const nodeOutputSources = memorySources.filter(s => s.type === 'node_output')
 
-          <Field label="Temperature">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input value={temperature} onChange={e => { setTemperature(e.target.value); onUpdate({ temperature: parseFloat(e.target.value) }) }} type="range" min="0" max="2" step="0.1" style={{ flex: 1, accentColor: meta.color }} />
-              <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: meta.color, width: 28, textAlign: 'center', padding: '3px 6px', borderRadius: 5, background: meta.bg }}>
-                {parseFloat(temperature).toFixed(1)}
-              </span>
-            </div>
-          </Field>
+          const setConvMemory = (on: boolean) => {
+            if (on) {
+              const firstCfg = memoryConfigs[0]
+              if (!firstCfg) return
+              const src: MemorySource = { id: Date.now().toString(), type: 'agent_runs', memoryConfigId: firstCfg.id }
+              const updated = [...memorySources.filter(s => s.type !== 'agent_runs'), src]
+              setMemorySources(updated); onUpdate({ memorySources: updated })
+            } else {
+              const updated = memorySources.filter(s => s.type !== 'agent_runs')
+              setMemorySources(updated); onUpdate({ memorySources: updated })
+            }
+          }
 
-          <Field label="Max Tokens (optional)">
-            <input value={maxTokens} onChange={e => { setMaxTokens(e.target.value); onUpdate({ maxTokens: e.target.value ? parseInt(e.target.value) : undefined }) }} type="number" min={1} max={128000} style={{ ...inputStyle, width: 120, fontSize: 11 }} placeholder="default" />
-          </Field>
+          const setConvMemConfig = (configId: string) => {
+            const updated = memorySources.map(s =>
+              s.type === 'agent_runs' ? { ...s, memoryConfigId: configId } : s
+            )
+            setMemorySources(updated); onUpdate({ memorySources: updated })
+          }
 
-          {/* Agentic mode */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 7, background: agenticMode ? 'rgba(124,111,240,0.08)' : 'var(--bg)', border: `1px solid ${agenticMode ? 'rgba(124,111,240,0.3)' : 'var(--border)'}` }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>Agentic Mode</div>
-              <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>LLM auto-calls tools in a loop until it stops</div>
-            </div>
-            <button onClick={() => { const n = !agenticMode; setAgenticMode(n); onUpdate({ agenticMode: n }) }} style={{ width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', position: 'relative', background: agenticMode ? 'var(--blue)' : 'var(--border)', padding: 0, flexShrink: 0 }}>
-              <span style={{ position: 'absolute', width: 13, height: 13, borderRadius: '50%', background: '#fff', top: 2.5, left: agenticMode ? 16 : 3, transition: 'left 0.2s' }} />
-            </button>
-          </div>
+          const addNodeOutputSource = (nodeId: string) => {
+            const node = upstreamNodes.find(n => n.id === nodeId)
+            if (!node) return
+            const src: MemorySource = { id: Date.now().toString(), type: 'node_output', nodeId, nodeLabel: node.data.label }
+            const updated = [...memorySources, src]
+            setMemorySources(updated); onUpdate({ memorySources: updated })
+          }
 
-          {/* Bound Tools — only shown when agentic mode is on */}
-          {agenticMode && (
-            <Field label="Bound Tools">
-              {/* Selected tools chips */}
-              {boundTools.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
-                  {boundTools.map(t => (
-                    <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, background: 'rgba(124,111,240,0.12)', border: '1px solid rgba(124,111,240,0.3)', fontSize: 11, color: 'var(--blue)' }}>
-                      <Wrench size={9} />
-                      <span>{t}</span>
-                      <button
-                        onClick={() => { const n = boundTools.filter(x => x !== t); setBoundTools(n); onUpdate({ boundTools: n }) }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', display: 'flex', padding: 0, marginLeft: 2 }}
-                      >
-                        <X size={9} />
-                      </button>
-                    </div>
-                  ))}
+          return (<>
+            {/* Model */}
+            <Field label="Model" accentColor={C}>
+              <div style={{ position: 'relative' }}>
+                <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                  <option value="">Default model</option>
+                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                </select>
+                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+              </div>
+            </Field>
+
+            {/* System Prompt */}
+            <Field label="System Prompt" accentColor={C}>
+              {prompts.length > 0 && (
+                <div style={{ position: 'relative', marginBottom: 7 }}>
+                  <select value={selectedPromptId} onChange={e => {
+                    setSelectedPromptId(e.target.value)
+                    const p = prompts.find(x => x.id === e.target.value)
+                    if (p) { setSystemPrompt(p.content); onUpdate({ systemPrompt: p.content }) }
+                  }} style={{ ...selectStyle, fontSize: 11, color: 'var(--text3)' }}>
+                    <option value="">Load a saved prompt...</option>
+                    {prompts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
                 </div>
               )}
-              {/* Tool picker */}
+              <textarea
+                value={systemPrompt}
+                onChange={e => { setSystemPrompt(e.target.value); onUpdate({ systemPrompt: e.target.value }) }}
+                rows={5}
+                placeholder={'You are a helpful assistant.\n\nUse {{input}} to reference the user message.'}
+                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.65, minHeight: 90 }}
+              />
+            </Field>
+
+            <div style={{ height: 1, background: 'var(--border2)' }} />
+
+            {/* Agentic Mode */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 11px', borderRadius: agenticMode ? '8px 8px 0 0' : 8, background: agenticMode ? `${C}10` : 'var(--surface)', border: `1px solid ${agenticMode ? C + '35' : 'var(--border)'}`, borderBottom: agenticMode ? 'none' : undefined }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: agenticMode ? C : 'var(--text)' }}>Agentic mode</div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>AI calls tools autonomously until done</div>
+                </div>
+                <button onClick={() => { const n = !agenticMode; setAgenticMode(n); onUpdate({ agenticMode: n }) }}
+                  style={{ width: 34, height: 19, borderRadius: 10, border: 'none', cursor: 'pointer', position: 'relative', background: agenticMode ? C : 'var(--border)', padding: 0, flexShrink: 0, transition: 'background 0.2s' }}>
+                  <span style={{ position: 'absolute', width: 14, height: 14, borderRadius: '50%', background: '#fff', top: 2.5, left: agenticMode ? 17 : 3, transition: 'left 0.2s' }} />
+                </button>
+              </div>
+              {agenticMode && (
+                <div style={{ padding: '10px 11px', borderRadius: '0 0 8px 8px', background: `${C}08`, border: `1px solid ${C}35`, borderTop: 'none' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Tools</div>
+                  {boundTools.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 7 }}>
+                      {boundTools.map(t => (
+                        <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, background: `${C}18`, border: `1px solid ${C}30`, fontSize: 11, color: C }}>
+                          <Wrench size={9} />{t}
+                          <button onClick={() => { const n = boundTools.filter(x => x !== t); setBoundTools(n); onUpdate({ boundTools: n }) }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C, display: 'flex', padding: 0, marginLeft: 1 }}>
+                            <X size={9} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ position: 'relative' }}>
+                    <select value="" onChange={e => {
+                      const val = e.target.value
+                      if (!val || boundTools.includes(val)) return
+                      const n = [...boundTools, val]; setBoundTools(n); onUpdate({ boundTools: n })
+                    }} style={{ ...selectStyle, fontSize: 11, background: 'var(--bg)' }}>
+                      <option value="">+ Add tool…</option>
+                      {tools.filter(t => !boundTools.includes(t.name)).map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                      {!boundTools.includes('web_search') && <option value="web_search">web_search (built-in)</option>}
+                      {!boundTools.includes('web_scrape') && <option value="web_scrape">web_scrape (built-in)</option>}
+                    </select>
+                    <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border2)' }} />
+
+            {/* Memory */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.8 }}>Memory</div>
+
+              {/* Conversation memory toggle */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 11px', borderRadius: hasConvMemory ? '8px 8px 0 0' : 8, background: hasConvMemory ? `${C}08` : 'var(--surface)', border: `1px solid ${hasConvMemory ? C + '30' : 'var(--border)'}`, borderBottom: hasConvMemory ? 'none' : undefined }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: hasConvMemory ? C : 'var(--text)' }}>Remember conversations</div>
+                    <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>Inject past runs as context</div>
+                  </div>
+                  <button
+                    onClick={() => setConvMemory(!hasConvMemory)}
+                    disabled={!hasConvMemory && memoryConfigs.length === 0}
+                    title={!hasConvMemory && memoryConfigs.length === 0 ? 'Create a memory config in the Memory tab first' : undefined}
+                    style={{ width: 34, height: 19, borderRadius: 10, border: 'none', cursor: memoryConfigs.length === 0 && !hasConvMemory ? 'not-allowed' : 'pointer', position: 'relative', background: hasConvMemory ? C : 'var(--border)', padding: 0, flexShrink: 0, transition: 'background 0.2s', opacity: !hasConvMemory && memoryConfigs.length === 0 ? 0.4 : 1 }}>
+                    <span style={{ position: 'absolute', width: 14, height: 14, borderRadius: '50%', background: '#fff', top: 2.5, left: hasConvMemory ? 17 : 3, transition: 'left 0.2s' }} />
+                  </button>
+                </div>
+                {hasConvMemory && (
+                  <div style={{ padding: '10px 11px', borderRadius: '0 0 8px 8px', background: `${C}06`, border: `1px solid ${C}30`, borderTop: 'none' }}>
+                    <div style={{ position: 'relative' }}>
+                      <select value={convMemSrc?.memoryConfigId ?? ''} onChange={e => setConvMemConfig(e.target.value)}
+                        style={{ ...selectStyle, fontSize: 11, background: 'var(--bg)' }}>
+                        <option value="">Select memory config...</option>
+                        {memoryConfigs.map(m => <option key={m.id} value={m.id}>{m.name} · last {m.window_size} runs</option>)}
+                      </select>
+                      <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+              {!hasConvMemory && memoryConfigs.length === 0 && (
+                <div style={{ fontSize: 10, color: 'var(--text4)', padding: '4px 2px' }}>Create a memory config in the Memory tab to enable this.</div>
+              )}
+
+              {/* Node output sources */}
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', marginBottom: 6 }}>Inject upstream node output</div>
+                {nodeOutputSources.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+                    {nodeOutputSources.map(src => (
+                      <div key={src.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, background: `${C}08`, border: `1px solid ${C}20` }}>
+                        <Database size={9} color={C} style={{ flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, color: 'var(--text2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.nodeLabel ?? src.nodeId}</span>
+                        <button onClick={() => removeMemorySource(src.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0 }}>
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {upstreamNodes.filter(n => !nodeOutputSources.some(s => s.nodeId === n.id)).length > 0 && (
+                  <div style={{ position: 'relative' }}>
+                    <select value="" onChange={e => { if (e.target.value) addNodeOutputSource(e.target.value) }}
+                      style={{ ...selectStyle, fontSize: 11 }}>
+                      <option value="">+ Add node output…</option>
+                      {upstreamNodes.filter(n => !nodeOutputSources.some(s => s.nodeId === n.id))
+                        .map(n => <option key={n.id} value={n.id}>{n.data.label}</option>)}
+                    </select>
+                    <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                  </div>
+                )}
+                {upstreamNodes.length === 0 && (
+                  <div style={{ fontSize: 10, color: 'var(--text4)' }}>No upstream nodes yet.</div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border2)' }} />
+
+            {/* Guardrail */}
+            <Field label="Guardrail" accentColor={C}>
               <div style={{ position: 'relative' }}>
-                <select
-                  value=""
-                  onChange={e => {
-                    const val = e.target.value
-                    if (!val || boundTools.includes(val)) return
-                    const n = [...boundTools, val]
-                    setBoundTools(n)
-                    onUpdate({ boundTools: n })
-                  }}
-                  style={{ ...selectStyle }}
-                >
-                  <option value="">+ Add tool…</option>
-                  {tools.filter(t => !boundTools.includes(t.name)).map(t => (
-                    <option key={t.id} value={t.name}>{t.name}</option>
-                  ))}
-                  {/* Built-in agentic tools */}
-                  {!boundTools.includes('web_search') && <option value="web_search">web_search (built-in)</option>}
-                  {!boundTools.includes('web_scrape') && <option value="web_scrape">web_scrape (built-in)</option>}
+                <select value={guardrailId} onChange={e => { setGuardrailId(e.target.value); onUpdate({ guardrailId: e.target.value || undefined }) }}
+                  style={{ ...selectStyle, color: guardrailId ? 'var(--error)' : 'var(--text3)' }}>
+                  <option value="">None</option>
+                  {guardrails.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
+                <Shield size={10} style={{ position: 'absolute', right: 22, top: '50%', transform: 'translateY(-50%)', color: guardrailId ? 'var(--error)' : 'var(--text3)', pointerEvents: 'none' }} />
                 <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
               </div>
-              <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 4, lineHeight: 1.5 }}>
-                The LLM will decide when and how to call these tools. Only web_search and web_scrape are fully supported today.
-              </div>
             </Field>
-          )}
 
-          {/* Guardrail */}
-          <Field label="Guardrail">
-            <div style={{ position: 'relative' }}>
-              <select value={guardrailId} onChange={e => { setGuardrailId(e.target.value); onUpdate({ guardrailId: e.target.value || undefined }) }} style={{ ...selectStyle, color: guardrailId ? 'var(--red)' : 'var(--text3)' }}>
-                <option value="">— None —</option>
-                {guardrails.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-              <Shield size={10} style={{ position: 'absolute', right: 22, top: '50%', transform: 'translateY(-50%)', color: guardrailId ? 'var(--red)' : 'var(--text3)', pointerEvents: 'none' }} />
-              <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-            </div>
-          </Field>
+            {/* Retry */}
+            <RetryConfig color={C} bg={meta.bg} enabled={retryEnabled} maxAttempts={retryMax} backoffMs={retryBackoff} retryOn={retryOn}
+              onToggle={v => { setRetryEnabled(v); onUpdate({ retry: { enabled: v, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn } }) }}
+              onMax={v => { setRetryMax(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(v) || 3, backoffMs: parseInt(retryBackoff), retryOn } }) }}
+              onBackoff={v => { setRetryBackoff(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(v) || 1000, retryOn } }) }}
+              onRetryOn={v => { setRetryOn(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn: v } }) }}
+            />
+          </>)
+        })()}
 
-          {/* Memory Sources */}
-          <Field label="Memory Sources">
-            {memorySources.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
-                {memorySources.map(src => {
-                  const label = src.type === 'agent_runs'
-                    ? `Past runs · ${memoryConfigs.find(m => m.id === src.memoryConfigId)?.name ?? src.memoryConfigId}`
-                    : `Node output · ${src.nodeLabel ?? src.nodeId}`
-                  return (
-                    <div key={src.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, background: 'rgba(124,111,240,0.08)', border: '1px solid rgba(124,111,240,0.2)' }}>
-                      <Database size={9} color="var(--blue)" style={{ flexShrink: 0 }} />
-                      <span style={{ fontSize: 10, color: 'var(--text2)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                      <button onClick={() => removeMemorySource(src.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0, flexShrink: 0 }}>
-                        <Trash2 size={10} />
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {addingMemory ? (
-              <div style={{ padding: '10px', borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ position: 'relative' }}>
-                  <select value={newMemType} onChange={e => setNewMemType(e.target.value as 'agent_runs' | 'node_output')} style={{ ...selectStyle, fontSize: 11 }}>
-                    <option value="agent_runs">Past agent runs (cross-session)</option>
-                    <option value="node_output">Upstream node output</option>
-                  </select>
-                  <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-                </div>
-
-                {newMemType === 'agent_runs' && (
-                  <div style={{ position: 'relative' }}>
-                    <select value={newMemConfigId} onChange={e => setNewMemConfigId(e.target.value)} style={{ ...selectStyle, fontSize: 11 }}>
-                      <option value="">— pick memory config —</option>
-                      {memoryConfigs.map(m => <option key={m.id} value={m.id}>{m.name} ({m.type}, {m.window_size} turns)</option>)}
-                    </select>
-                    <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-                  </div>
-                )}
-
-                {newMemType === 'node_output' && (
-                  <div style={{ position: 'relative' }}>
-                    <select value={newMemNodeId} onChange={e => setNewMemNodeId(e.target.value)} style={{ ...selectStyle, fontSize: 11 }}>
-                      <option value="">— pick node —</option>
-                      {upstreamNodes.map(n => <option key={n.id} value={n.id}>{n.data.label} ({n.data.nodeType})</option>)}
-                    </select>
-                    <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={addMemorySource} style={{ flex: 1, padding: '5px 0', borderRadius: 6, background: 'var(--blue)', color: '#fff', border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-                  <button onClick={() => { setAddingMemory(false); setNewMemConfigId(''); setNewMemNodeId('') }} style={{ flex: 1, padding: '5px 0', borderRadius: 6, background: 'var(--surface2)', color: 'var(--text3)', border: '1px solid var(--border)', fontSize: 11, cursor: 'pointer' }}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => setAddingMemory(true)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 0', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 11, cursor: 'pointer' }}>
-                <Plus size={10} /> Add memory source
-              </button>
-            )}
-          </Field>
-
-          {/* System Prompt */}
-          <Field label="System Prompt">
-            {prompts.length > 0 && (
-              <div style={{ position: 'relative', marginBottom: 8 }}>
-                <select value={selectedPromptId} onChange={e => { setSelectedPromptId(e.target.value); const p = prompts.find(x => x.id === e.target.value); if (p) { setSystemPrompt(p.content); onUpdate({ systemPrompt: p.content }) } }} style={{ ...selectStyle, fontSize: 11, color: 'var(--text3)' }}>
-                  <option value="">— pick from registry —</option>
-                  {prompts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-              </div>
-            )}
-            <textarea value={systemPrompt} onChange={e => { setSystemPrompt(e.target.value); onUpdate({ systemPrompt: e.target.value }) }} rows={6} placeholder="You are a helpful assistant..." style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6, minHeight: 96 }} />
-          </Field>
-
-          {/* Retry */}
-          <RetryConfig color={meta.color} bg={meta.bg} enabled={retryEnabled} maxAttempts={retryMax} backoffMs={retryBackoff} retryOn={retryOn}
-            onToggle={v => { setRetryEnabled(v); onUpdate({ retry: { enabled: v, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn } }) }}
-            onMax={v => { setRetryMax(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(v) || 3, backoffMs: parseInt(retryBackoff), retryOn } }) }}
-            onBackoff={v => { setRetryBackoff(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(v) || 1000, retryOn } }) }}
-            onRetryOn={v => { setRetryOn(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn: v } }) }}
-          />
-        </>)}
-
-        {/* Passthrough / I/O node config */}
-        {(nodeData.nodeType === 'passthrough' || nodeData.nodeType === 'input') && (<>
-          <Field label="Template">
+        {/* Start (input) node config */}
+        {nodeData.nodeType === 'input' && (<>
+          <Field label="Description" accentColor={meta.color}>
             <textarea
-              value={template}
-              onChange={e => { setTemplate(e.target.value); onUpdate({ template: e.target.value }) }}
-              rows={6}
-              placeholder={'{{last_output}}\n\nOr add extra context:\nContext: {{last_output}}\nUser asked: {{input}}'}
-              style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6, minHeight: 100 }}
+              value={inputDesc}
+              onChange={e => { setInputDesc(e.target.value); onUpdate({ description: e.target.value }) }}
+              rows={2}
+              placeholder="What does this agent do? Shown to the orchestrator for routing."
+              style={{ ...inputStyle, resize: 'none', lineHeight: 1.55, fontSize: 12 }}
             />
           </Field>
-          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(100,181,246,0.08)', border: '1px solid rgba(100,181,246,0.2)', color: 'var(--text3)', lineHeight: 1.6 }}>
-            <strong style={{ color: 'var(--text2)' }}>Variables:</strong><br />
-            <code style={{ background: 'var(--bg)', padding: '0 3px', borderRadius: 3 }}>{'{{last_output}}'}</code> — previous node output<br />
-            <code style={{ background: 'var(--bg)', padding: '0 3px', borderRadius: 3 }}>{'{{input}}'}</code> — original pipeline input<br />
-            <code style={{ background: 'var(--bg)', padding: '0 3px', borderRadius: 3 }}>{'{{node.NODE_ID}}'}</code> — any upstream node<br />
-            <span style={{ marginTop: 4, display: 'block' }}>Leave empty to pass through unchanged.</span>
+          <Field label="API Input Field" accentColor={meta.color}>
+            <input
+              value={inputField}
+              onChange={e => { setInputField(e.target.value); onUpdate({ inputField: e.target.value }) }}
+              style={{ ...inputStyle, fontFamily: 'monospace' }}
+              placeholder="message"
+            />
+          </Field>
+          <Field label="Default Value (optional)" accentColor={meta.color}>
+            <input
+              value={inputDefault}
+              onChange={e => { setInputDefault(e.target.value); onUpdate({ inputDefault: e.target.value }) }}
+              style={inputStyle}
+              placeholder="Used when no input is provided"
+            />
+          </Field>
+          <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${meta.color}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+            <strong style={{ color: meta.color, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>API contract</strong>
+            Callers POST <code style={{ background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, fontFamily: 'monospace', color: meta.color }}>{`{ "${inputField || 'message'}": "..." }`}</code> to run this agent.
+            Use <code style={{ background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, fontFamily: 'monospace' }}>{'{{input}}'}</code> in downstream nodes to reference this value.
           </div>
         </>)}
 
+        {/* End (output) node config */}
+        {nodeData.nodeType === 'output' && (
+          <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${meta.color}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+            <strong style={{ color: meta.color, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How it works</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span>· The pipeline terminates here</span>
+              <span>· The last node's output becomes the agent's final response</span>
+              <span>· No configuration needed. Connect it to the final step.</span>
+            </div>
+          </div>
+        )}
+
+        {/* Transform (passthrough) node config */}
+        {nodeData.nodeType === 'passthrough' && (() => {
+          const C = meta.color
+          return (<>
+            <Field label="Template" accentColor={C}>
+              <textarea
+                value={template}
+                onChange={e => { setTemplate(e.target.value); onUpdate({ template: e.target.value }) }}
+                rows={6}
+                placeholder={'{{last_output}}\n\nOr reshape it:\nContext: {{last_output}}\nUser asked: {{input}}'}
+                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6, minHeight: 100 }}
+              />
+            </Field>
+            <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+              <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Variables</strong>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>{'{{last_output}}'}</code> previous node output</span>
+                <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>{'{{input}}'}</code> original pipeline input</span>
+                <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>{'{{node.NODE_ID}}'}</code> any upstream node's output</span>
+                <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>{'{{state.key}}'}</code> any named variable</span>
+                <span style={{ color: 'var(--text4)', marginTop: 2 }}>Leave empty to pass through unchanged.</span>
+              </div>
+            </div>
+          </>)
+        })()}
+
         {/* Tool config */}
-        {nodeData.nodeType === 'tool' && (<>
-          <Field label="Tool">
-            <div style={{ position: 'relative' }}>
-              <select value={toolName} onChange={e => { setToolName(e.target.value); onUpdate({ toolName: e.target.value }); lastToolId.current = null }} style={selectStyle}>
-                <option value="">— select or configure below —</option>
-                {tools.map(t => <option key={t.id} value={t.name}>{t.name} [{t.type}]</option>)}
-              </select>
-              <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-            </div>
-          </Field>
-
-          {/* Tool type selector */}
-          <Field label="Type">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[{ v: 'http', icon: <Wrench size={10} />, label: 'HTTP' }, { v: 'web_search', icon: <Search size={10} />, label: 'Search' }, { v: 'web_scrape', icon: <Globe size={10} />, label: 'Scrape' }, { v: 'datatable', icon: <Database size={10} />, label: 'Table' }].map(({ v, icon, label: lbl }) => (
-                <button key={v} onClick={() => setToolType(v)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', borderRadius: 6, border: `1px solid ${toolType === v ? '#22d79a' : 'var(--border)'}`, background: toolType === v ? 'rgba(34,215,154,0.1)' : 'var(--bg)', color: toolType === v ? '#22d79a' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
-                  {icon}{lbl}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          {/* HTTP fields */}
-          {toolType === 'http' && (<>
-            <Field label="Method + URL">
-              <div style={{ display: 'flex', gap: 6 }}>
-                <div style={{ position: 'relative', width: 72, flexShrink: 0 }}>
-                  <select value={toolMethod} onChange={e => setToolMethod(e.target.value)} style={{ ...selectStyle, fontSize: 11, padding: '6px 20px 6px 8px' }}>
-                    {HTTP_METHODS.map(m => <option key={m}>{m}</option>)}
-                  </select>
-                  <ChevronDown size={9} style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+        {nodeData.nodeType === 'tool' && (() => {
+          const C = meta.color
+          const TYPE_ICON: Record<string, React.ReactNode> = {
+            http: <Wrench size={10} />, web_search: <Search size={10} />,
+            web_scrape: <Globe size={10} />, datatable: <Database size={10} />,
+            function: <Wrench size={10} />, code_exec: <Wrench size={10} />,
+          }
+          const TYPE_LABEL: Record<string, string> = {
+            http: 'HTTP', web_search: 'Search', web_scrape: 'Scrape',
+            datatable: 'Table', function: 'Function', code_exec: 'Code',
+          }
+          const filteredTools = tools.filter(t =>
+            !toolPickerSearch || t.name.toLowerCase().includes(toolPickerSearch.toLowerCase()) ||
+            (t.type && t.type.toLowerCase().includes(toolPickerSearch.toLowerCase()))
+          )
+          const selectedTool = tools.find(t => t.name === toolName)
+          return (<>
+          <Field label="Tool" accentColor={C}>
+            {/* Selected tool display */}
+            {selectedTool ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: `${C}08`, border: `1px solid ${C}30`, cursor: 'pointer' }}
+                onClick={() => setToolPickerOpen(o => !o)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+                  <span style={{ color: C, display: 'flex' }}>{TYPE_ICON[selectedTool.type] ?? <Wrench size={10} />}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedTool.name}</span>
+                  <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: `${C}14`, color: C, fontWeight: 700, flexShrink: 0 }}>{TYPE_LABEL[selectedTool.type] ?? selectedTool.type}</span>
                 </div>
-                <input value={toolEndpoint} onChange={e => setToolEndpoint(e.target.value)} style={{ ...inputStyle, fontSize: 11, flex: 1, minWidth: 0 }} placeholder="https://api.example.com/search?q={{last_output}}" />
+                <ChevronDown size={12} style={{ color: C, flexShrink: 0, transform: toolPickerOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
               </div>
-            </Field>
-            <Field label="Headers">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {toolHeaders.map((row, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    <input value={row.key} onChange={e => setHeader(i, 'key', e.target.value)} style={{ ...inputStyle, flex: 1, fontSize: 10, padding: '5px 7px' }} placeholder="Header" />
-                    <input value={row.value} onChange={e => setHeader(i, 'value', e.target.value)} style={{ ...inputStyle, flex: 2, fontSize: 10, padding: '5px 7px' }} placeholder="Value / {{last_output}}" />
-                    {toolHeaders.length > 1 && <button onClick={() => removeHeader(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', flexShrink: 0, padding: 0 }}><X size={10} /></button>}
+            ) : (
+              <button onClick={() => setToolPickerOpen(o => !o)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, background: 'var(--surface)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: 12, color: 'var(--text3)', fontFamily: 'inherit' }}>
+                Select a tool...
+                <ChevronDown size={12} style={{ color: 'var(--text3)', transform: toolPickerOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
+              </button>
+            )}
+
+            {/* Dropdown picker */}
+            {toolPickerOpen && (
+              <div style={{ marginTop: 4, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                {/* Search */}
+                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border2)' }}>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
+                    <input
+                      value={toolPickerSearch}
+                      onChange={e => setToolPickerSearch(e.target.value)}
+                      placeholder="Search tools..."
+                      autoFocus
+                      style={{ ...inputStyle, paddingLeft: 26, fontSize: 11, padding: '6px 8px 6px 26px' }}
+                    />
                   </div>
-                ))}
-              </div>
-            </Field>
-            {!['GET', 'DELETE', 'HEAD'].includes(toolMethod) && (
-              <Field label="Body Template (JSON)">
-                <textarea value={toolBody} onChange={e => setToolBody(e.target.value)} rows={4} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 10, lineHeight: 1.5, padding: '6px 8px' }} placeholder={'{\n  "query": "{{last_output}}"\n}'} />
-                <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 3 }}>Leave empty → auto-sends {'{"input":"{{last_output}}"}'}</div>
-              </Field>
-            )}
-            <Field label="Response Path (optional)">
-              <input value={toolRespPath} onChange={e => setToolRespPath(e.target.value)} style={{ ...inputStyle, fontSize: 11 }} placeholder="results.0.text" />
-              <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 3 }}>Dot notation to extract field from JSON response</div>
-            </Field>
-            <Field label="Timeout (ms)">
-              <input value={toolTimeout} onChange={e => setToolTimeout(e.target.value)} type="number" style={{ ...inputStyle, fontSize: 11 }} />
-            </Field>
-          </>)}
-
-          {/* Web search fields */}
-          {toolType === 'web_search' && (<>
-            <Field label="Provider">
-              <div style={{ position: 'relative' }}>
-                <select value={toolProvider} onChange={e => setToolProvider(e.target.value)} style={selectStyle}>
-                  {SEARCH_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
-                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
-              </div>
-            </Field>
-            {toolProvider !== 'duckduckgo' && (
-              <Field label="API Key">
-                <input type="password" value={toolApiKey} onChange={e => setToolApiKey(e.target.value)} style={inputStyle} placeholder={toolProvider === 'tavily' ? 'tvly-...' : 'your-serper-key'} />
-              </Field>
-            )}
-            <Field label="Max Results">
-              <input value={toolMaxResults} onChange={e => setToolMaxResults(e.target.value)} type="number" min="1" max="20" style={{ ...inputStyle, width: 100 }} />
-            </Field>
-            <div style={{ fontSize: 10, color: 'var(--text3)', padding: '6px 8px', borderRadius: 6, background: 'rgba(34,215,154,0.06)', border: '1px solid rgba(34,215,154,0.15)' }}>
-              Uses prev node output as search query automatically.
-            </div>
-          </>)}
-
-          {/* Web scrape fields */}
-          {toolType === 'web_scrape' && (<>
-            <Field label="Jina API Key (optional)">
-              <input type="password" value={toolApiKey} onChange={e => setToolApiKey(e.target.value)} style={inputStyle} placeholder="jina_..." />
-            </Field>
-            <div style={{ fontSize: 10, color: 'var(--text3)', padding: '6px 8px', borderRadius: 6, background: 'rgba(34,215,154,0.06)', border: '1px solid rgba(34,215,154,0.15)' }}>
-              Uses prev node output as the URL to scrape via jina.ai/reader.
-            </div>
-          </>)}
-
-          {/* Datatable fields */}
-          {toolType === 'datatable' && (<>
-            <Field label="Datatable">
-              <select value={dtId} onChange={e => setDtId(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 11 }}>
-                <option value="">— select a datatable —</option>
-                {datatables.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Mode">
-              <div style={{ display: 'flex', gap: 4 }}>
-                {(['import', 'export'] as const).map(m => (
-                  <button key={m} onClick={() => setDtMode(m)} style={{ flex: 1, padding: '6px 4px', borderRadius: 6, border: `1px solid ${dtMode === m ? '#7c6ff0' : 'var(--border)'}`, background: dtMode === m ? 'rgba(124,111,240,0.15)' : 'var(--bg)', color: dtMode === m ? '#7c6ff0' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, textTransform: 'capitalize' }}>
-                    {m === 'import' ? '⬇ Import' : '⬆ Export'}
+                </div>
+                {/* Tool list */}
+                <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                  {filteredTools.length === 0 ? (
+                    <div style={{ padding: '12px 12px', fontSize: 11, color: 'var(--text4)', textAlign: 'center' }}>No tools found</div>
+                  ) : filteredTools.map(t => (
+                    <button key={t.id}
+                      onClick={() => { setToolName(t.name); onUpdate({ toolName: t.name }); lastToolId.current = null; setToolPickerOpen(false); setToolPickerSearch('') }}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', background: t.name === toolName ? `${C}08` : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', borderBottom: '1px solid var(--border2)' }}
+                      onMouseEnter={e => { if (t.name !== toolName) e.currentTarget.style.background = 'var(--surface)' }}
+                      onMouseLeave={e => { if (t.name !== toolName) e.currentTarget.style.background = 'transparent' }}>
+                      <span style={{ color: t.name === toolName ? C : 'var(--text3)', display: 'flex', flexShrink: 0 }}>{TYPE_ICON[t.type] ?? <Wrench size={12} />}</span>
+                      <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: t.name === toolName ? C : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                      <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: t.name === toolName ? `${C}14` : 'var(--surface)', color: t.name === toolName ? C : 'var(--text3)', fontWeight: 700, flexShrink: 0 }}>{TYPE_LABEL[t.type] ?? t.type}</span>
+                    </button>
+                  ))}
+                </div>
+                {toolName && (
+                  <button onClick={() => { setToolName(''); onUpdate({ toolName: '' }); setToolPickerOpen(false) }}
+                    style={{ width: '100%', padding: '8px 12px', background: 'none', border: 'none', borderTop: '1px solid var(--border2)', cursor: 'pointer', fontSize: 11, color: 'var(--error)', fontFamily: 'inherit', textAlign: 'center' }}>
+                    Clear selection
                   </button>
-                ))}
+                )}
               </div>
-            </Field>
-            {dtId && (() => {
-              const dt = datatables.find(d => d.id === dtId)
-              if (!dt) return null
-              return (
-                <div style={{ padding: '6px 8px', borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', fontSize: 10 }}>
-                  <div style={{ fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 9 }}>Columns</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {dt.columns.map(c => (
-                      <span key={c.name} style={{ padding: '2px 7px', borderRadius: 4, background: c.isPrimaryKey ? 'rgba(124,111,240,0.15)' : 'var(--surface2)', border: `1px solid ${c.isPrimaryKey ? 'rgba(124,111,240,0.4)' : 'var(--border)'}`, color: c.isPrimaryKey ? '#7c6ff0' : 'var(--text2)', fontSize: 10 }}>
-                        {c.name} <span style={{ opacity: 0.6 }}>({c.type})</span>{c.isPrimaryKey ? ' 🔑' : ''}
-                      </span>
-                    ))}
-                  </div>
-                  {dtMode === 'import' && dt.columns.some(c => c.isPrimaryKey) && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Filter by {dt.columns.find(c => c.isPrimaryKey)?.name} (PK)
-                      </div>
-                      <input
-                        value={dtPkFilter}
-                        onChange={e => setDtPkFilter(e.target.value)}
-                        placeholder={`e.g. alice  or  {{last_output}}`}
-                        style={{ width: '100%', padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 11, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }}
-                      />
-                      <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 3 }}>
-                        Leave blank to import all rows. Use <code style={{ background: 'var(--surface2)', padding: '1px 4px', borderRadius: 3 }}>{'{{last_output}}'}</code> to filter by the previous node&apos;s output.
-                      </div>
-                    </div>
-                  )}
-                  {dtMode === 'export' && (
-                    <div style={{ marginTop: 6, fontSize: 9, color: 'var(--text3)' }}>
-                      Previous LLM node must output a JSON object with matching column keys.
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </>)}
+            )}
+          </Field>
+
+
 
           {/* Compress output toggle */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 7, background: compressOutput ? 'rgba(124,111,240,0.08)' : 'var(--bg)', border: `1px solid ${compressOutput ? 'rgba(124,111,240,0.3)' : 'var(--border)'}`, marginBottom: compressOutput ? 4 : 8 }}>
@@ -740,270 +792,570 @@ export default function NodeConfigPanel({ nodeId, nodeData, allNodes, onUpdate, 
             </div>
           )}
 
-          <button onClick={saveToolEdits} disabled={toolSaving} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, width: '100%', padding: '7px 0', borderRadius: 7, border: 'none', background: toolSaved ? 'rgba(34,215,154,0.15)' : 'rgba(34,215,154,0.2)', color: toolSaved ? '#22d79a' : '#22d79a', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
-            {toolSaved ? '✓ Saved' : toolSaving ? 'Saving…' : (toolName ? 'Save Tool Changes' : 'Create & Assign Tool')}
-          </button>
-
-          {/* Retry */}
-          <RetryConfig color="#22d79a" bg="rgba(34,215,154,0.08)" enabled={retryEnabled} maxAttempts={retryMax} backoffMs={retryBackoff} retryOn={retryOn}
+          <RetryConfig color={C} bg={meta.bg} enabled={retryEnabled} maxAttempts={retryMax} backoffMs={retryBackoff} retryOn={retryOn}
             onToggle={v => { setRetryEnabled(v); onUpdate({ retry: { enabled: v, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn } }) }}
             onMax={v => { setRetryMax(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(v) || 3, backoffMs: parseInt(retryBackoff), retryOn } }) }}
             onBackoff={v => { setRetryBackoff(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(v) || 1000, retryOn } }) }}
             onRetryOn={v => { setRetryOn(v); onUpdate({ retry: { enabled: retryEnabled, maxAttempts: parseInt(retryMax), backoffMs: parseInt(retryBackoff), retryOn: v } }) }}
           />
-        </>)}
 
-        {/* Condition config */}
-        {nodeData.nodeType === 'condition' && (<>
-          <Field label="Evaluator Model">
-            <div style={{ position: 'relative' }}>
-              <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                <option value="">Default (Gemini 2.5 Flash)</option>
-                {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-              </select>
-              <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+          </>)
+        })()}
+
+        {/* Branch (Condition) config */}
+        {nodeData.nodeType === 'condition' && (() => {
+          const C = meta.color
+          return (<>
+            {/* Model */}
+            <Field label="Evaluator Model" accentColor={C}>
+              <div style={{ position: 'relative' }}>
+                <select value={model} onChange={e => { setModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                  <option value="">Default model</option>
+                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                </select>
+                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+              </div>
+            </Field>
+
+            {/* What the LLM sees */}
+            <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: `${C}0A`, border: `1px solid ${C}25`, color: 'var(--text3)', lineHeight: 1.7 }}>
+              <div style={{ fontWeight: 700, color: C, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>What the LLM sees</div>
+              Your condition + <code style={{ background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, fontFamily: 'monospace' }}>{'{{last_output}}'}</code> as context. Replies with only <strong style={{ color: '#22d79a' }}>true</strong> or <strong style={{ color: '#dc2626' }}>false</strong>.
             </div>
-          </Field>
-          <Field label="Condition Expression">
-            <textarea value={condition} onChange={e => { setCondition(e.target.value); onUpdate({ condition: e.target.value }) }} rows={4} placeholder="e.g. the response mentions an error" style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }} />
-          </Field>
-          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(245,160,32,0.08)', border: '1px solid rgba(245,160,32,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
-            Evaluated by LLM. <span style={{ color: '#22d79a', fontWeight: 700 }}>True</span> → top handle · <span style={{ color: 'var(--red)', fontWeight: 700 }}>False</span> → bottom handle
-          </div>
-        </>)}
+
+            {/* Condition — the hero field */}
+            <Field label="Condition" accentColor={C}>
+              <textarea
+                value={condition}
+                onChange={e => { setCondition(e.target.value); onUpdate({ condition: e.target.value }) }}
+                rows={4}
+                placeholder={'Write a plain-English condition:\n\n"the sentiment is negative"\n"the user is asking about billing"\n"the output contains an error message"'}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.65, minHeight: 90 }}
+              />
+            </Field>
+
+            {/* Cost note */}
+            <div style={{ padding: '9px 11px', borderRadius: 8, background: `${C}0A`, border: `1px solid ${C}25`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10 }}>
+              <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Cost note</strong>
+              Only the provider and API key are used. Temperature and max tokens are fixed at 0 and 10.
+            </div>
+          </>)
+        })()}
 
         {/* HITL config */}
-        {nodeData.nodeType === 'hitl' && (<>
-          <Field label="Checkpoint Question">
-            <textarea value={question} onChange={e => { setQuestion(e.target.value); onUpdate({ question: e.target.value }) }} rows={4} placeholder="What should the reviewer check before approving?" style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }} />
-          </Field>
-          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(176,128,248,0.08)', border: '1px solid rgba(176,128,248,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
-            Pipeline pauses here. Resume via dashboard or API.
-          </div>
-        </>)}
+        {nodeData.nodeType === 'hitl' && (() => {
+          const C = meta.color
+          return (<>
+            <Field label="Review Question" accentColor={C}>
+              <textarea
+                value={question}
+                onChange={e => { setQuestion(e.target.value); onUpdate({ question: e.target.value }) }}
+                rows={4}
+                placeholder="What should the reviewer check before approving?"
+                style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
+              />
+            </Field>
+
+            <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+              <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How it works</strong>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span>· Pipeline pauses here with <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>status: waiting_hitl</code></span>
+                <span>· Reviewer sees the question + current output in the dashboard</span>
+                <span>· On approve: pipeline resumes. Reviewer notes are injected into the next node's input.</span>
+                <span>· On reject: run is marked failed. Pipeline does not continue.</span>
+              </div>
+            </div>
+          </>)
+        })()}
 
         {/* Clarify config */}
-        {nodeData.nodeType === 'clarify' && (<>
-          {/* Mode toggle */}
-          <Field label="Mode">
-            <div style={{ display: 'flex', gap: 6 }}>
-              {(['static', 'llm'] as const).map(m => (
-                <button key={m} onClick={() => { setClarifyMode(m); onUpdate({ clarifyMode: m }) }} style={{
-                  flex: 1, height: 32, borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                  border: `1px solid ${clarifyMode === m ? '#f472b6' : 'var(--border)'}`,
-                  background: clarifyMode === m ? 'rgba(244,114,182,0.12)' : 'var(--surface2)',
-                  color: clarifyMode === m ? '#f472b6' : 'var(--text3)',
-                }}>
-                  {m === 'static' ? 'Fixed Question' : 'LLM Generated'}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          {clarifyMode === 'static' ? (<>
-            <Field label="Question to ask the user">
-              <textarea
-                value={staticQuestion}
-                onChange={e => { setStaticQuestion(e.target.value); onUpdate({ staticQuestion: e.target.value }) }}
-                rows={3}
-                placeholder="What are your spending details for today?"
-                style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
-              />
-            </Field>
-            <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(244,114,182,0.08)', border: '1px solid rgba(244,114,182,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
-              Shows this exact question to the user. No LLM call. Flow pauses until the user replies in chat.
-            </div>
-          </>) : (<>
-            <Field label="Question Model">
-              <div style={{ position: 'relative' }}>
-                <select value={clarifyModel} onChange={e => { setClarifyModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                  <option value="">Default (first configured model)</option>
-                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-                </select>
-                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+        {nodeData.nodeType === 'clarify' && (() => {
+          const C = meta.color
+          return (<>
+            <Field label="Mode" accentColor={C}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['static', 'llm'] as const).map(m => (
+                  <button key={m} onClick={() => { setClarifyMode(m); onUpdate({ clarifyMode: m }) }}
+                    style={{ flex: 1, padding: '6px 4px', borderRadius: 7, fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: 'all 0.12s',
+                      border: `1px solid ${clarifyMode === m ? C : 'var(--border)'}`,
+                      background: clarifyMode === m ? `${C}14` : 'var(--bg)',
+                      color: clarifyMode === m ? C : 'var(--text3)',
+                    }}>
+                    {m === 'static' ? 'Fixed Question' : 'LLM Generated'}
+                  </button>
+                ))}
               </div>
             </Field>
-            <Field label="System Prompt (optional)">
-              <textarea
-                value={clarifySystemPrompt}
-                onChange={e => { setClarifySystemPrompt(e.target.value); onUpdate({ clarifySystemPrompt: e.target.value }) }}
-                rows={4}
-                placeholder="You are a helpful assistant. Based on the context, ask ONE concise clarifying question to better understand what the user needs."
-                style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
-              />
-            </Field>
-            <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(244,114,182,0.08)', border: '1px solid rgba(244,114,182,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
-              LLM generates a question from context. Flow pauses until the user replies in chat. The answer is injected into the next node&apos;s input.
-            </div>
-          </>)}
-        </>)}
+
+            {clarifyMode === 'static' ? (<>
+              <Field label="Question" accentColor={C}>
+                <textarea
+                  value={staticQuestion}
+                  onChange={e => { setStaticQuestion(e.target.value); onUpdate({ staticQuestion: e.target.value }) }}
+                  rows={3}
+                  placeholder="What are your spending details for today?"
+                  style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
+                />
+              </Field>
+              <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+                <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How it works</strong>
+                Shows this exact question to the user. No LLM call. Flow pauses until the user replies.
+              </div>
+            </>) : (<>
+              <Field label="Question Model" accentColor={C}>
+                <div style={{ position: 'relative' }}>
+                  <select value={clarifyModel} onChange={e => { setClarifyModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                    <option value="">Default model</option>
+                    {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                </div>
+              </Field>
+              <Field label="System Prompt (optional)" accentColor={C}>
+                <textarea
+                  value={clarifySystemPrompt}
+                  onChange={e => { setClarifySystemPrompt(e.target.value); onUpdate({ clarifySystemPrompt: e.target.value }) }}
+                  rows={4}
+                  placeholder="You are a helpful assistant. Based on the context, ask ONE concise clarifying question to better understand what the user needs."
+                  style={{ ...inputStyle, resize: 'vertical', fontSize: 11, lineHeight: 1.6 }}
+                />
+              </Field>
+              <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+                <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How it works</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span>· LLM reads <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>{'{{last_output}}'}</code> and generates one question</span>
+                  <span>· Flow pauses until the user replies in chat</span>
+                  <span>· Answer is injected into the next node's input</span>
+                </div>
+              </div>
+            </>)}
+          </>)
+        })()}
 
         {/* Loop config */}
-        {nodeData.nodeType === 'loop' && (<>
-          <Field label="Max Iterations">
-            <input type="number" min={1} max={100} value={loopMaxIter} onChange={e => { setLoopMaxIter(e.target.value); onUpdate({ maxIterations: parseInt(e.target.value) || 5 }) }} style={{ ...inputStyle, width: 100 }} />
-          </Field>
-          <Field label="Exit Condition Type">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {(['expression', 'llm'] as const).map(t => (
-                <button key={t} onClick={() => { setLoopExitType(t); onUpdate({ exitConditionType: t }) }} style={{ flex: 1, padding: '6px', borderRadius: 6, border: `1px solid ${loopExitType === t ? '#ff7043' : 'var(--border)'}`, background: loopExitType === t ? 'rgba(255,112,67,0.1)' : 'var(--bg)', color: loopExitType === t ? '#ff7043' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, textTransform: 'capitalize' }}>
-                  {t === 'expression' ? 'JS Expression' : 'LLM Evaluate'}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Exit Condition">
-            <textarea value={loopExitCond} onChange={e => { setLoopExitCond(e.target.value); onUpdate({ exitCondition: e.target.value }) }} rows={3} placeholder={loopExitType === 'llm' ? 'The output is a complete, valid answer' : 'output.includes("DONE") || iteration >= 3'} style={{ ...inputStyle, resize: 'vertical', fontSize: 11, fontFamily: loopExitType === 'expression' ? 'monospace' : 'inherit', lineHeight: 1.6 }} />
-          </Field>
-          {loopExitType === 'llm' && (
-            <Field label="Evaluator Model">
-              <div style={{ position: 'relative' }}>
-                <select value={loopModel} onChange={e => { setLoopModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                  <option value="">Default (first configured model)</option>
-                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-                </select>
-                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+        {nodeData.nodeType === 'loop' && (() => {
+          const C = meta.color
+          return (<>
+            <Field label="Exit Condition Type" accentColor={C}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['expression', 'llm'] as const).map(t => (
+                  <button key={t} onClick={() => { setLoopExitType(t); onUpdate({ exitConditionType: t }) }}
+                    style={{ flex: 1, padding: '6px', borderRadius: 7, border: `1px solid ${loopExitType === t ? C : 'var(--border)'}`, background: loopExitType === t ? `${C}14` : 'var(--bg)', color: loopExitType === t ? C : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, transition: 'all 0.12s' }}>
+                    {t === 'expression' ? 'JS Expression' : 'LLM Evaluate'}
+                  </button>
+                ))}
               </div>
             </Field>
-          )}
-          <Field label="On Max Reached">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[{ v: 'continue', label: 'Continue' }, { v: 'error', label: 'Error' }].map(({ v, label: lbl }) => (
-                <button key={v} onClick={() => { setLoopOnMax(v); onUpdate({ onMaxReached: v as 'continue' | 'error' }) }} style={{ flex: 1, padding: '6px', borderRadius: 6, border: `1px solid ${loopOnMax === v ? '#ff7043' : 'var(--border)'}`, background: loopOnMax === v ? 'rgba(255,112,67,0.1)' : 'var(--bg)', color: loopOnMax === v ? '#ff7043' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
-                  {lbl}
-                </button>
-              ))}
+
+            <Field label="Exit Condition" accentColor={C}>
+              <textarea value={loopExitCond} onChange={e => { setLoopExitCond(e.target.value); onUpdate({ exitCondition: e.target.value }) }} rows={3}
+                placeholder={loopExitType === 'llm' ? 'The answer is complete and addresses all the user\'s points' : 'output.includes("DONE") || iteration >= 3'}
+                style={{ ...inputStyle, resize: 'vertical', fontSize: 11, fontFamily: loopExitType === 'expression' ? 'monospace' : 'inherit', lineHeight: 1.6 }} />
+              {loopExitType === 'expression' && (
+                <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10, marginTop: 6 }}>
+                  <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Variables</strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>output</code> last body output. Iteration 1: node before loop.</span>
+                    <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>iteration</code> count (1-based)</span>
+                    <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>input</code> original pipeline input</span>
+                    <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>{'state["node-id"]'}</code> any upstream node's output</span>
+                  </div>
+                </div>
+              )}
+              {loopExitType === 'llm' && (
+                <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10, marginTop: 6 }}>
+                  <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How it works</strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <span>Plain-English condition. LLM reads it with the current output and replies <strong style={{ color: 'var(--text2)' }}>exit</strong> or <strong style={{ color: 'var(--text2)' }}>continue</strong>.</span>
+                    <span>On iteration 1, output is the node before the loop.</span>
+                  </div>
+                </div>
+              )}
+            </Field>
+
+            <Field label="Max Iterations" accentColor={C}>
+              <input type="number" min={1} max={100} value={loopMaxIter}
+                onChange={e => { setLoopMaxIter(e.target.value); onUpdate({ maxIterations: parseInt(e.target.value) || 5 }) }}
+                style={{ ...inputStyle, width: 100 }} />
+            </Field>
+
+            <Field label="On Max Reached" accentColor={C}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                {[{ v: 'continue', label: 'Proceed' }, { v: 'error', label: 'Fail run' }].map(({ v, label: lbl }) => (
+                  <button key={v} onClick={() => { setLoopOnMax(v); onUpdate({ onMaxReached: v as 'continue' | 'error' }) }}
+                    style={{ flex: 1, padding: '6px', borderRadius: 7, border: `1px solid ${loopOnMax === v ? C : 'var(--border)'}`, background: loopOnMax === v ? `${C}14` : 'var(--bg)', color: loopOnMax === v ? C : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, transition: 'all 0.12s' }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10 }}>
+                <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>What happens</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span>· <strong style={{ color: 'var(--text2)' }}>Proceed</strong>: exit loop, continue to next node</span>
+                  <span>· <strong style={{ color: 'var(--text2)' }}>Fail run</strong>: stop the pipeline with an error</span>
+                </div>
+              </div>
+            </Field>
+
+            {loopExitType === 'llm' && (
+              <Field label="Evaluator Model" accentColor={C}>
+                <div style={{ position: 'relative' }}>
+                  <select value={loopModel} onChange={e => { setLoopModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                    <option value="">Default model</option>
+                    {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                </div>
+              </Field>
+            )}
+
+            <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+              <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How to wire</strong>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span>· Connect the loop body chain below this node</span>
+                <span>· Connect the last body node back to the <strong style={{ color: C }}>left handle</strong> to close the loop</span>
+                <span>· Exit condition is checked after each iteration</span>
+              </div>
             </div>
-          </Field>
-          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(255,112,67,0.06)', border: '1px solid rgba(255,112,67,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
-            Connect loop body below this node. Connect the last body node back to the <strong style={{ color: '#ff7043' }}>left handle</strong> to form the loop. Exit condition is checked after each iteration.
-          </div>
-        </>)}
+          </>)
+        })()}
 
         {/* Fork config */}
-        {nodeData.nodeType === 'fork' && (<>
-          <Field label="Input Mode">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[{ v: 'broadcast', label: 'Broadcast (copy to all)' }, { v: 'split', label: 'Split (distribute array)' }].map(({ v, label: lbl }) => (
-                <button key={v} onClick={() => { setForkInputMode(v); onUpdate({ inputMode: v as 'broadcast' | 'split' }) }} style={{ flex: 1, padding: '5px 4px', borderRadius: 6, border: `1px solid ${forkInputMode === v ? '#26c6da' : 'var(--border)'}`, background: forkInputMode === v ? 'rgba(38,198,218,0.1)' : 'var(--bg)', color: forkInputMode === v ? '#26c6da' : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 700 }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Branches">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {forkBranches.map((b, idx) => (
-                <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <input value={b.label} onChange={e => {
-                    const updated = forkBranches.map((x, i) => i === idx ? { ...x, label: e.target.value } : x)
-                    setForkBranches(updated); onUpdate({ branches: updated })
-                  }} style={{ ...inputStyle, flex: 1, fontSize: 11 }} placeholder={`Branch ${idx + 1}`} />
-                  {forkBranches.length > 2 && (
-                    <button onClick={() => {
-                      const updated = forkBranches.filter((_, i) => i !== idx)
-                      setForkBranches(updated); onUpdate({ branches: updated })
-                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0 }}><Trash2 size={11} /></button>
-                  )}
+        {nodeData.nodeType === 'fork' && (() => {
+          const C = meta.color
+          return (<>
+            <Field label="Input Mode" accentColor={C}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[{ v: 'broadcast', label: 'Broadcast' }, { v: 'split', label: 'Split array' }].map(({ v, label: lbl }) => (
+                  <button key={v} onClick={() => { setForkInputMode(v); onUpdate({ inputMode: v as 'broadcast' | 'split' }) }}
+                    style={{ flex: 1, padding: '6px 4px', borderRadius: 7, border: `1px solid ${forkInputMode === v ? C : 'var(--border)'}`, background: forkInputMode === v ? `${C}14` : 'var(--bg)', color: forkInputMode === v ? C : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, transition: 'all 0.12s' }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10, marginTop: 6 }}>
+                <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Modes</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span>· <strong style={{ color: 'var(--text2)' }}>Broadcast</strong>: same input copied to every branch</span>
+                  <span>· <strong style={{ color: 'var(--text2)' }}>Split array</strong>: distributes one array item per branch</span>
                 </div>
-              ))}
-              <button onClick={() => {
-                const updated = [...forkBranches, { id: uuidv4(), label: `Branch ${forkBranches.length + 1}` }]
-                setForkBranches(updated); onUpdate({ branches: updated })
-              }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>
-                <Plus size={10} /> Add branch
-              </button>
-            </div>
-          </Field>
-          <div style={{ padding: '8px 10px', borderRadius: 7, fontSize: 10, background: 'rgba(38,198,218,0.06)', border: '1px solid rgba(38,198,218,0.2)', color: 'var(--text3)', lineHeight: 1.5 }}>
-            Connect each branch handle to a separate node chain. All branches run in parallel. Connect them to a Join node to collect results.
-          </div>
-        </>)}
-
-        {/* Join config */}
-        {nodeData.nodeType === 'join' && (<>
-          <Field label="Merge Format">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[{ v: 'array', label: '[ ] Array' }, { v: 'object', label: '{ } Object' }, { v: 'concatenated', label: '… Text' }].map(({ v, label: lbl }) => (
-                <button key={v} onClick={() => { setJoinMergeFormat(v); onUpdate({ mergeFormat: v as 'array' | 'object' | 'concatenated' }) }} style={{ flex: 1, padding: '5px 4px', borderRadius: 6, border: `1px solid ${joinMergeFormat === v ? '#26c6da' : 'var(--border)'}`, background: joinMergeFormat === v ? 'rgba(38,198,218,0.1)' : 'var(--bg)', color: joinMergeFormat === v ? '#26c6da' : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 700 }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Join Mode">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[{ v: 'wait_all', label: 'All' }, { v: 'wait_first', label: 'First' }].map(({ v, label: lbl }) => (
-                <button key={v} onClick={() => { setJoinMode(v); onUpdate({ joinMode: v as 'wait_all' | 'wait_first' }) }} style={{ flex: 1, padding: '5px 4px', borderRadius: 6, border: `1px solid ${joinMode === v ? '#26c6da' : 'var(--border)'}`, background: joinMode === v ? 'rgba(38,198,218,0.1)' : 'var(--bg)', color: joinMode === v ? '#26c6da' : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 700 }}>
-                  Wait {lbl}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Save as variable (optional)">
-            <input value={joinMergeAs} onChange={e => { setJoinMergeAs(e.target.value); onUpdate({ mergeAs: e.target.value || undefined }) }} style={{ ...inputStyle, fontSize: 11 }} placeholder="e.g. branch_results" />
-            <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 3 }}>Access via {'{{state.branch_results}}'} in downstream nodes</div>
-          </Field>
-        </>)}
-
-        {/* Switch config */}
-        {nodeData.nodeType === 'switch' && (<>
-          <Field label="Switch Type">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[{ v: 'value_match', label: 'Match' }, { v: 'expression', label: 'Expr' }, { v: 'llm_classify', label: 'LLM' }].map(({ v, label: lbl }) => (
-                <button key={v} onClick={() => { setSwitchType(v); onUpdate({ switchType: v as 'value_match' | 'llm_classify' | 'expression' }) }} style={{ flex: 1, padding: '6px', borderRadius: 6, border: `1px solid ${switchType === v ? '#ffd600' : 'var(--border)'}`, background: switchType === v ? 'rgba(255,214,0,0.1)' : 'var(--bg)', color: switchType === v ? '#ffd600' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </Field>
-          {switchType === 'llm_classify' && (
-            <Field label="Classifier Model">
-              <div style={{ position: 'relative' }}>
-                <select value={switchModel} onChange={e => { setSwitchModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
-                  <option value="">Default (first configured model)</option>
-                  {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name} · {m.model_id}</option>)}
-                </select>
               </div>
             </Field>
-          )}
-          {switchType !== 'llm_classify' && (
-            <Field label="Input Key (optional)">
-              <input value={switchInputKey} onChange={e => { setSwitchInputKey(e.target.value); onUpdate({ inputKey: e.target.value || undefined }) }} style={{ ...inputStyle, fontSize: 11 }} placeholder="e.g. sentiment (from {{input.sentiment}})" />
+
+            <Field label="Branches" accentColor={C}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {forkBranches.map((b, idx) => {
+                  const connectedEdge = outgoingEdges.find(e => e.sourceHandle === b.id)
+                  const connectedNodeId = connectedEdge?.target ?? ''
+                  const availableNodes = allNodes.filter(n => n.data.nodeType !== 'input' && n.id !== nodeId)
+                  return (
+                    <div key={b.id} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                        <select
+                          value={connectedNodeId}
+                          onChange={e => {
+                            const targetNode = availableNodes.find(n => n.id === e.target.value)
+                            const newLabel = targetNode?.data.label ?? `Branch ${idx + 1}`
+                            onRemoveEdge?.(b.id)
+                            const updated = forkBranches.map((x, i) => i === idx ? { ...x, label: newLabel } : x)
+                            setForkBranches(updated); onUpdate({ branches: updated })
+                            if (e.target.value) onAddEdge?.(b.id, e.target.value, newLabel)
+                          }}
+                          style={{ ...selectStyle, fontSize: 11, padding: '6px 24px 6px 8px', color: connectedNodeId ? 'var(--text)' : 'var(--text4)' }}
+                        >
+                          <option value="">Branch {idx + 1}...</option>
+                          {availableNodes.map(n => (
+                            <option key={n.id} value={n.id}>{n.data.label}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={10} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                      </div>
+                      {forkBranches.length > 2 && (
+                        <button onClick={() => {
+                          onRemoveEdge?.(b.id)
+                          const updated = forkBranches.filter((_, i) => i !== idx)
+                          setForkBranches(updated); onUpdate({ branches: updated })
+                        }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0, flexShrink: 0 }}>
+                          <Trash2 size={11} color="var(--error)" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+                <button onClick={() => {
+                  const updated = [...forkBranches, { id: uuidv4(), label: `Branch ${forkBranches.length + 1}` }]
+                  setForkBranches(updated); onUpdate({ branches: updated })
+                }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px', borderRadius: 7, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>
+                  <Plus size={10} /> Add branch
+                </button>
+              </div>
             </Field>
-          )}
-          <Field label="Cases">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {switchCases.map((c, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                  <input value={c.label} onChange={e => {
-                    const updated = switchCases.map((x, i) => i === idx ? { ...x, label: e.target.value } : x)
-                    setSwitchCases(updated); onUpdate({ cases: updated })
-                  }} style={{ ...inputStyle, flex: 1, fontSize: 10, padding: '5px 7px' }} placeholder="Label" />
-                  <input value={c.match} onChange={e => {
-                    const updated = switchCases.map((x, i) => i === idx ? { ...x, match: e.target.value } : x)
-                    setSwitchCases(updated); onUpdate({ cases: updated })
-                  }} style={{ ...inputStyle, flex: 2, fontSize: 10, padding: '5px 7px', fontFamily: switchType === 'expression' ? 'monospace' : 'inherit' }} placeholder={switchType === 'expression' ? 'value === "yes"' : switchType === 'llm_classify' ? 'Category name' : 'match value'} />
-                  {switchCases.length > 2 && (
-                    <button onClick={() => {
-                      const updated = switchCases.filter((_, i) => i !== idx)
-                      setSwitchCases(updated); onUpdate({ cases: updated })
-                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0 }}><Trash2 size={11} /></button>
-                  )}
-                </div>
-              ))}
-              <button onClick={() => {
-                const updated = [...switchCases, { label: `Case ${switchCases.length + 1}`, match: '' }]
-                setSwitchCases(updated); onUpdate({ cases: updated })
-              }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>
-                <Plus size={10} /> Add case
-              </button>
+
+            <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7 }}>
+              <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How to wire</strong>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span>· Connect each branch handle to a separate node chain</span>
+                <span>· All branches run in parallel</span>
+                <span>· Connect all chains to a <strong style={{ color: C }}>Join</strong> node to collect results</span>
+              </div>
             </div>
-          </Field>
-          <Field label="Default Case Label">
-            <input value={switchDefault} onChange={e => { setSwitchDefault(e.target.value); onUpdate({ defaultCase: e.target.value || undefined }) }} style={{ ...inputStyle, fontSize: 11 }} placeholder="e.g. Default (connects via bottom handle)" />
-          </Field>
-        </>)}
+
+            <div style={{ padding: '9px 11px', borderRadius: 8, fontSize: 10, background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', color: 'var(--text3)', lineHeight: 1.7 }}>
+              <strong style={{ color: 'var(--warning)', display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Supported inside branches</strong>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span>· AI Step, Action, Transform</span>
+              </div>
+            </div>
+          </>)
+        })()}
+
+        {/* Join config */}
+        {nodeData.nodeType === 'join' && (() => {
+          const C = meta.color
+          return (<>
+            <Field label="Merge Format" accentColor={C}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[{ v: 'array', label: '[ ] Array' }, { v: 'object', label: '{ } Object' }, { v: 'concatenated', label: '… Text' }].map(({ v, label: lbl }) => (
+                  <button key={v} onClick={() => { setJoinMergeFormat(v); onUpdate({ mergeFormat: v as 'array' | 'object' | 'concatenated' }) }}
+                    style={{ flex: 1, padding: '6px 4px', borderRadius: 7, border: `1px solid ${joinMergeFormat === v ? C : 'var(--border)'}`, background: joinMergeFormat === v ? `${C}14` : 'var(--bg)', color: joinMergeFormat === v ? C : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, transition: 'all 0.12s' }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10, marginTop: 6 }}>
+                <strong style={{ color: C, display: 'block', marginBottom: 4, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Output shape</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span>· <strong style={{ color: 'var(--text2)' }}>Array</strong>: <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3 }}>[resultA, resultB, ...]</code></span>
+                  <span>· <strong style={{ color: 'var(--text2)' }}>Object</strong>: <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3 }}>{`{ "Branch A": result, ... }`}</code></span>
+                  <span>· <strong style={{ color: 'var(--text2)' }}>Text</strong>: all results joined with a blank line</span>
+                </div>
+              </div>
+            </Field>
+
+            <Field label="Save as variable" accentColor={C}>
+              <input
+                value={joinMergeAs}
+                onChange={e => { setJoinMergeAs(e.target.value); onUpdate({ mergeAs: e.target.value || undefined }) }}
+                style={{ ...inputStyle, fontSize: 11, fontFamily: 'monospace' }}
+                placeholder="e.g. branch_results"
+              />
+              <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10, marginTop: 6 }}>
+                <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Usage</strong>
+                <span>Access via <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>{`{{state.branch_results}}`}</code> in any downstream node. Optional.</span>
+              </div>
+            </Field>
+          </>)
+        })()}
+
+        {/* Switch config */}
+        {nodeData.nodeType === 'switch' && (() => {
+          const C = meta.color
+
+          const MODE_OPTIONS = [
+            { v: 'value_match',   label: 'Exact match', desc: 'Routes when the output contains or equals a value. No LLM, no cost.' },
+            { v: 'expression',    label: 'Expression',  desc: 'Write a JS condition per case. value = last output, input = original input.' },
+            { v: 'llm_classify',  label: 'AI classify', desc: 'The AI reads the output and picks the best matching category. Costs tokens.' },
+          ]
+
+          const selectedMode = MODE_OPTIONS.find(m => m.v === switchType)
+
+          return (<>
+            {/* Mode selector */}
+            <Field label="How to route" accentColor={C}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                {MODE_OPTIONS.map(({ v, label: lbl }) => (
+                  <button key={v}
+                    onClick={() => { setSwitchType(v); onUpdate({ switchType: v as 'value_match' | 'llm_classify' | 'expression' }) }}
+                    style={{ flex: 1, padding: '6px 4px', borderRadius: 7, border: `1px solid ${switchType === v ? C : 'var(--border)'}`, background: switchType === v ? `${C}14` : 'var(--bg)', color: switchType === v ? C : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, transition: 'all 0.12s' }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <div style={{ marginTop: 6 }}>
+                {switchType === 'value_match' && (
+                  <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10 }}>
+                    <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How it works</strong>
+                    Routes when the output equals or contains the match value. Case-insensitive.
+                  </div>
+                )}
+                {switchType === 'expression' && (
+                  <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10 }}>
+                    <strong style={{ color: C, display: 'block', marginBottom: 5, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Variables</strong>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>value</code> last output</span>
+                      <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>input</code> user message</span>
+                      <span>· <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>state["id"]</code> any node's output</span>
+                      <span>· Combine with <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>&amp;&amp;</code> or <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>||</code></span>
+                    </div>
+                  </div>
+                )}
+                {switchType === 'llm_classify' && (
+                  <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10 }}>
+                    <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>How it works</strong>
+                    AI reads the output and picks the closest category name. One LLM call, temperature 0.
+                  </div>
+                )}
+              </div>
+            </Field>
+
+            {/* Read from field — non-LLM only */}
+            {switchType !== 'llm_classify' && (
+              <Field label="Read from field" accentColor={C}>
+                <input
+                  value={switchInputKey}
+                  onChange={e => { setSwitchInputKey(e.target.value); onUpdate({ inputKey: e.target.value || undefined }) }}
+                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11 }}
+                  placeholder="e.g. sentiment or node-id"
+                />
+                <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10, marginTop: 6 }}>
+                  <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>What to read</strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <span>· Leave blank to match against the full last output</span>
+                    <span>· Use a field name (e.g. <code style={{ fontFamily: 'monospace', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3, color: C }}>sentiment</code>) to read from the input object</span>
+                    <span>· Use any node's ID to match against that node's output specifically</span>
+                  </div>
+                </div>
+              </Field>
+            )}
+
+            {/* Classifier model — LLM mode only */}
+            {switchType === 'llm_classify' && (
+              <Field label="Classifier model" accentColor={C}>
+                <div style={{ position: 'relative' }}>
+                  <select value={switchModel} onChange={e => { setSwitchModel(e.target.value); onUpdate({ model: e.target.value }) }} style={selectStyle}>
+                    <option value="">Default model</option>
+                    {modelConfigs.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                </div>
+                <div style={{ padding: '9px 11px', borderRadius: 8, background: meta.bg, border: `1px solid ${C}30`, color: 'var(--text3)', lineHeight: 1.7, fontSize: 10, marginTop: 6 }}>
+                  <strong style={{ color: C, display: 'block', marginBottom: 3, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Cost note</strong>
+                  Only the provider and API key from this model are used. Temperature and max tokens are fixed at 0 and 20. Each evaluation costs tokens.
+                </div>
+              </Field>
+            )}
+
+            <div style={{ height: 1, background: 'var(--border2)' }} />
+
+            {/* Cases */}
+            <Field label="Cases" accentColor={C}>
+              <div style={{ display: 'flex', gap: 5, marginBottom: 5, paddingRight: 20 }}>
+                <span style={{ flex: 1, fontSize: 9, color: 'var(--text3)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Route to</span>
+                <span style={{ flex: 2, fontSize: 9, color: 'var(--text3)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  {switchType === 'expression' ? 'Condition' : switchType === 'llm_classify' ? 'Category' : 'Match value'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {switchCases.map((c, idx) => {
+                  // Find which node is currently wired to this case handle
+                  const connectedEdge = outgoingEdges.find(e => e.sourceHandle === c.label)
+                  const connectedNodeId = connectedEdge?.target ?? ''
+                  const availableNodes = allNodes.filter(n => n.data.nodeType !== 'input' && n.id !== nodeId)
+
+                  const handleNodeSelect = (targetNodeId: string) => {
+                    onRemoveEdge?.(c.label)
+                    if (targetNodeId) {
+                      const targetNode = availableNodes.find(n => n.id === targetNodeId)
+                      const edgeLabel = targetNode?.data.label ? String(targetNode.data.label) : c.label
+                      onAddEdge?.(c.label, targetNodeId, edgeLabel)
+                      const updated = switchCases.map((x, i) => i === idx ? { ...x, targetLabel: edgeLabel } : x)
+                      setSwitchCases(updated); onUpdate({ cases: updated })
+                    } else {
+                      const updated = switchCases.map((x, i) => i === idx ? { ...x, targetLabel: undefined } : x)
+                      setSwitchCases(updated); onUpdate({ cases: updated })
+                    }
+                  }
+
+                  return (
+                    <div key={idx} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                      {/* Node selector — always shown */}
+                      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                        <select
+                          value={connectedNodeId}
+                          onChange={e => handleNodeSelect(e.target.value)}
+                          style={{ ...selectStyle, fontSize: 11, padding: '6px 24px 6px 8px', color: connectedNodeId ? 'var(--text)' : 'var(--text4)' }}
+                        >
+                          <option value="">Route to...</option>
+                          {availableNodes.map(n => (
+                            <option key={n.id} value={n.id}>{n.data.label}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={10} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                      </div>
+
+                      {/* Condition / category — shown for all modes */}
+                      <input
+                        value={c.match}
+                        onChange={e => {
+                          const updated = switchCases.map((x, i) => i === idx ? { ...x, match: e.target.value } : x)
+                          setSwitchCases(updated); onUpdate({ cases: updated })
+                        }}
+                        style={{ ...inputStyle, flex: 2, minWidth: 0, fontSize: 11, padding: '6px 8px', fontFamily: switchType === 'expression' ? 'monospace' : 'inherit' }}
+                        placeholder={switchType === 'expression' ? 'value.includes("error") || value.length > 300' : switchType === 'llm_classify' ? 'billing complaint' : 'billing'}
+                      />
+
+                      {switchCases.length > 2 && (
+                        <button onClick={() => {
+                          if (c.label) onRemoveEdge?.(c.label)
+                          const updated = switchCases.filter((_, i) => i !== idx)
+                          setSwitchCases(updated); onUpdate({ cases: updated })
+                        }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 0, flexShrink: 0 }}>
+                          <Trash2 size={11} color="var(--error)" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+                <button
+                  onClick={() => {
+                    const updated = [...switchCases, { label: `Case ${switchCases.length + 1}`, match: '' }]
+                    setSwitchCases(updated); onUpdate({ cases: updated })
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px', borderRadius: 7, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 10, cursor: 'pointer' }}>
+                  <Plus size={10} /> Add case
+                </button>
+              </div>
+            </Field>
+
+            {/* Default path — node selector */}
+            <Field label="Default path" accentColor={C}>
+              <div style={{ position: 'relative' }}>
+                {(() => {
+                  const defaultEdge = outgoingEdges.find(e => e.sourceHandle === 'default')
+                  const availableNodes = allNodes.filter(n => n.data.nodeType !== 'input' && n.id !== nodeId)
+                  return (
+                    <>
+                      <select
+                        value={defaultEdge?.target ?? ''}
+                        onChange={e => {
+                          const targetNode = availableNodes.find(n => n.id === e.target.value)
+                          onRemoveEdge?.('default')
+                          if (e.target.value) {
+                            onAddEdge?.('default', e.target.value, 'Default')
+                            setSwitchDefault(targetNode?.data.label ?? '')
+                            onUpdate({ defaultCase: targetNode?.data.label ?? undefined })
+                          }
+                        }}
+                        style={{ ...selectStyle, color: defaultEdge ? 'var(--text)' : 'var(--text4)' }}
+                      >
+                        <option value="">No default route</option>
+                        {availableNodes.map(n => (
+                          <option key={n.id} value={n.id}>{n.data.label}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                    </>
+                  )
+                })()}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6, lineHeight: 1.6 }}>
+                Used when no case matches. If unset, the run stops here.
+              </div>
+            </Field>
+
+          </>)
+        })()}
       </div>
     </div>
   )

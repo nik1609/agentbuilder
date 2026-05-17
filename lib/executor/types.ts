@@ -41,6 +41,8 @@ export interface ExecutionContext {
   loopCounters?: Record<string, number>
   // Branch results collected by Fork for Join to consume
   branchResults?: Record<string, unknown>
+  // Branch labels: branchId → human label, stored at Fork time so Join object-merge is order-independent
+  branchLabels?: Record<string, string>
 }
 
 export interface NodeResult {

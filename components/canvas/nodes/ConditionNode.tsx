@@ -4,37 +4,68 @@ import { GitBranch } from 'lucide-react'
 import { NodeData } from '@/types/agent'
 import NodeIdChip from './NodeIdChip'
 
+const COLOR = '#f5a020'
+
 export default function ConditionNode({ id, data, selected }: NodeProps) {
   const d = data as NodeData
+  const preview = d.condition
+    ? String(d.condition).slice(0, 72) + (String(d.condition).length > 72 ? '…' : '')
+    : null
+
   return (
     <div style={{
-      minWidth: 180, borderRadius: 12, overflow: 'hidden', cursor: 'grab',
-      background: 'var(--surface)',
-      borderStyle: 'solid',
-      borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 3,
-      borderTopColor: selected ? '#f5a020' : 'var(--border)', borderRightColor: selected ? '#f5a020' : 'var(--border)', borderBottomColor: selected ? '#f5a020' : 'var(--border)', borderLeftColor: '#f5a020',
-      boxShadow: selected ? '0 0 0 2px rgba(245,160,32,0.3), 0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.3)',
+      minWidth: 210, maxWidth: 260,
+      borderRadius: 12, overflow: 'visible', cursor: 'grab',
+      background: 'var(--bg)',
+      border: `1.5px solid ${selected ? COLOR : 'var(--border)'}`,
+      boxShadow: selected
+        ? `0 0 0 3px ${COLOR}1A, 0 4px 16px rgba(0,0,0,0.1)`
+        : '0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)',
+      transition: 'border-color 0.15s, box-shadow 0.15s',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px 6px', borderBottom: '1px solid var(--border2)' }}>
-        <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(245,160,32,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <GitBranch size={11} color="#f5a020" />
+      <Handle type="target" position={Position.Top}
+        style={{ width: 10, height: 10, background: 'var(--bg)', border: `2px solid ${COLOR}`, top: -6 }} />
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px 8px', borderBottom: '1px solid var(--border2)', borderRadius: '12px 12px 0 0', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 5, background: `${COLOR}14`, flexShrink: 0 }}>
+          <GitBranch size={10} color={COLOR} />
+          <span style={{ fontSize: 8, fontWeight: 800, color: COLOR, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Branch</span>
         </div>
-        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#f5a020' }}>Condition</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {d.label}
+        </span>
+        <NodeIdChip id={id} />
       </div>
-      <div style={{ padding: '8px 12px 10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 3 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
-          <NodeIdChip id={id} />
-        </div>
-        {d.condition && (
-          <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
-            {String(d.condition).slice(0, 50)}
-          </div>
+
+      {/* Body */}
+      <div style={{ padding: '7px 12px 12px', borderRadius: '0 0 12px 12px', overflow: 'hidden', background: 'var(--bg)' }}>
+        <p style={{ fontSize: 11, color: preview ? 'var(--text2)' : 'var(--text4)', lineHeight: 1.55, margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', fontStyle: preview ? 'normal' : 'italic' }}>
+          {preview ?? 'No condition set'}
+        </p>
+
+        {d.model && (
+          <span style={{ display: 'inline-block', marginTop: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'var(--surface2)', color: 'var(--text3)', fontFamily: 'monospace' }}>
+            {String(d.model)}
+          </span>
         )}
+
+        {/* Subtle handle labels — sit just above their respective handles */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingBottom: 2 }}>
+          <span style={{ fontSize: 9, fontWeight: 600, color: '#22d79a', letterSpacing: '0.04em', paddingLeft: '16%' }}>
+            True
+          </span>
+          <span style={{ fontSize: 9, fontWeight: 600, color: '#dc2626', letterSpacing: '0.04em', paddingRight: '16%' }}>
+            False
+          </span>
+        </div>
       </div>
-      <Handle type="target" position={Position.Top} title="Input" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #f5a020', top: -6 }} />
-      <Handle type="source" position={Position.Bottom} id="true" title="True → condition met" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #22d79a', bottom: -6, left: '30%', transform: 'translateX(-50%)' }} />
-      <Handle type="source" position={Position.Bottom} id="false" title="False → condition not met" style={{ width: 10, height: 10, background: 'var(--surface2)', border: '2px solid #e85555', bottom: -6, left: '70%', transform: 'translateX(-50%)' }} />
+
+      {/* True → left, False → right */}
+      <Handle type="source" id="true" position={Position.Bottom}
+        style={{ width: 10, height: 10, background: 'var(--bg)', border: `2px solid #22d79a`, bottom: -6, left: '30%', transform: 'translateX(-50%)' }} />
+      <Handle type="source" id="false" position={Position.Bottom}
+        style={{ width: 10, height: 10, background: 'var(--bg)', border: `2px solid #dc2626`, bottom: -6, left: '70%', transform: 'translateX(-50%)' }} />
     </div>
   )
 }

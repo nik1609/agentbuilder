@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getUserId } from '@/lib/auth'
 import { executeAgent } from '@/lib/executor/dag-executor'
+import { fireWebhook } from '@/lib/webhook'
 
 export async function POST(
   req: NextRequest,
@@ -38,7 +39,12 @@ export async function POST(
   // Hard reject (no feedback, just stop)
   if (!approved && action !== 'revise') {
     const rejectionMsg = feedback ? `Rejected by reviewer: ${feedback}` : 'Rejected by reviewer.'
-    await db.from('agent_runs').update({ status: 'completed', output: { rejected: true, message: rejectionMsg }, error: null }).eq('id', runId)
+    const savedOutput = run.output as { checkpoint?: string } | null
+    const checkpointId = savedOutput?.checkpoint
+    const rejectEvent = checkpointId
+      ? [{ type: 'node_done', nodeId: checkpointId, message: 'Review rejected', ts: Date.now(), data: { output: 'rejected' } }]
+      : []
+    await db.from('agent_runs').update({ status: 'completed', output: { rejected: true, message: rejectionMsg }, error: null, trace: [...(run.trace ?? []), ...rejectEvent] }).eq('id', runId)
     return NextResponse.json({ runId, agentId: run.agent_id, output: { rejected: true, message: rejectionMsg }, status: 'completed', tokens: run.tokens ?? 0, latencyMs: run.latency_ms ?? 0, trace: [] })
   }
 
@@ -137,19 +143,15 @@ export async function POST(
 
   // ── 7. Determine resume checkpoint (approve = continue forward, revise = loop back to preceding node) ──
   let resumeCheckpoint = checkpointNodeId
-  let resumeFeedback = feedback
+  const resumeAction = action === 'revise' ? 'revise' : 'approve'
 
   if (action === 'revise') {
-    // Find the node that feeds INTO the HITL checkpoint and re-run from there
     const edges = (schema as { nodes: unknown[]; edges: Array<{ source: string; target: string }> }).edges
     const incomingEdge = edges.find(e => e.target === checkpointNodeId)
     if (!incomingEdge) {
       return NextResponse.json({ error: 'Cannot find preceding node to revise from' }, { status: 400 })
     }
     resumeCheckpoint = incomingEdge.source
-    resumeFeedback = feedback
-      ? `The reviewer requested changes: "${feedback}"\n\nPrevious version to revise:\n${typeof partialOutput === 'string' ? partialOutput : JSON.stringify(partialOutput)}`
-      : `The reviewer requested a revision. Please improve the previous output:\n${typeof partialOutput === 'string' ? partialOutput : JSON.stringify(partialOutput)}`
   }
 
   // ── 8. Resume execution ───────────────────────────────────────────────────
@@ -159,7 +161,7 @@ export async function POST(
     run.agent_id,
     runId,
     undefined,
-    { checkpointNodeId: resumeCheckpoint, partialOutput, feedback: resumeFeedback },
+    { checkpointNodeId: resumeCheckpoint, partialOutput, feedback, action: resumeAction },
     modelConfigs,
     undefined,
     undefined,
@@ -177,7 +179,7 @@ export async function POST(
     trace: [...(run.trace ?? []), ...result.trace],
   }).eq('id', runId)
 
-  return NextResponse.json({
+  const responseBody = {
     runId,
     agentId: run.agent_id,
     agentName: run.agent_name,
@@ -187,5 +189,15 @@ export async function POST(
     latencyMs: (run.latency_ms ?? 0) + result.latencyMs,
     trace: result.trace,
     error: result.error ?? null,
-  })
+  }
+
+  // Fire signed webhook if the original run included a callbackUrl
+  const runInput = run.input as Record<string, unknown> | null
+  const callbackUrl   = runInput?._callbackUrl
+  const webhookSecret = runInput?._webhookSecret
+  if (typeof callbackUrl === 'string' && callbackUrl && result.status !== 'waiting_hitl') {
+    void fireWebhook(callbackUrl, responseBody, typeof webhookSecret === 'string' ? webhookSecret : undefined)
+  }
+
+  return NextResponse.json(responseBody)
 }

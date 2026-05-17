@@ -1,9 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { Info, Wrench, Cpu, FileText, Database, Shield, GitBranch } from 'lucide-react'
+import { Info, FileText, Database, Shield, GitBranch } from 'lucide-react'
 import AgentInfoTab from './tabs/AgentInfoTab'
-import ToolsTab from './tabs/ToolsTab'
-import ModelsTab from './tabs/ModelsTab'
 import PromptsTab from './tabs/PromptsTab'
 import MemoryTab from './tabs/MemoryTab'
 import GuardrailsTab from './tabs/GuardrailsTab'
@@ -11,8 +9,6 @@ import OrchestratorTab from './tabs/OrchestratorTab'
 
 const TABS = [
   { id: 'Agent',        label: 'Agent',        icon: Info },
-  { id: 'Tools',        label: 'Tools',        icon: Wrench },
-  { id: 'Models',       label: 'Models',       icon: Cpu },
   { id: 'Prompts',      label: 'Prompts',      icon: FileText },
   { id: 'Memory',       label: 'Memory',       icon: Database },
   { id: 'Guardrails',   label: 'Guardrails',   icon: Shield },
@@ -79,7 +75,7 @@ function TabButton({ id, label, icon: Icon, active, onClick }: {
 }
 
 export default function ConfigStudio({ currentAgentId, currentAgentName }: ConfigStudioProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('Tools')
+  const [activeTab, setActiveTab] = useState<Tab>('Agent')
 
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
@@ -119,8 +115,6 @@ export default function ConfigStudio({ currentAgentId, currentAgentName }: Confi
         {/* Tab content */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {activeTab === 'Agent'        && <AgentInfoTab agentId={currentAgentId ?? ''} agentName={currentAgentName ?? ''} />}
-          {activeTab === 'Tools'        && <ToolsTab />}
-          {activeTab === 'Models'       && <ModelsTab />}
           {activeTab === 'Prompts'      && <PromptsTab />}
           {activeTab === 'Memory'       && <MemoryTab />}
           {activeTab === 'Guardrails'   && <GuardrailsTab />}

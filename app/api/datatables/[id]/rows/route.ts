@@ -39,6 +39,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json(data, { status: 201 })
 }
 
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const userId = await getUserId(req)
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id: datatableId } = await params
+  const db = createAdminClient()
+  const { data: dt } = await db.from('datatables').select('id').eq('id', datatableId).eq('user_id', userId).single()
+  if (!dt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const { id: rowId, data: rowData } = await req.json()
+  const { data, error } = await db.from('datatable_rows').update({ data: rowData }).eq('id', rowId).eq('datatable_id', datatableId).select().single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data)
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getUserId(req)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

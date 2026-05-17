@@ -1,20 +1,17 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Brain, ToggleLeft, ToggleRight, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { Brain, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
 
 interface ModelRow { id: string; name: string; provider: string; model_id: string }
 interface OrchestratorConfig { enabled: boolean; model: string }
 
-interface Props {
-  agentId: string
-}
+interface Props { agentId: string }
 
 export default function OrchestratorTab({ agentId }: Props) {
   const [models, setModels] = useState<ModelRow[]>([])
   const [config, setConfig] = useState<OrchestratorConfig>({ enabled: false, model: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     Promise.all([
@@ -30,25 +27,16 @@ export default function OrchestratorTab({ agentId }: Props) {
 
   const save = async (next: OrchestratorConfig) => {
     setSaving(true)
-    setStatus('idle')
     try {
-      // Fetch current agent schema first, then merge orchestratorConfig in
       const agentRes = await fetch(`/api/agents/${agentId}`).then(r => r.json())
-      const currentSchema = agentRes?.schema ?? {}
-      const newSchema = { ...currentSchema, orchestratorConfig: next }
-      const res = await fetch(`/api/agents/${agentId}`, {
+      const newSchema = { ...(agentRes?.schema ?? {}), orchestratorConfig: next }
+      await fetch(`/api/agents/${agentId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schema: newSchema }),
       })
-      if (!res.ok) throw new Error('Save failed')
-      setStatus('saved')
-      setTimeout(() => setStatus('idle'), 2000)
-    } catch {
-      setStatus('error')
-    } finally {
-      setSaving(false)
-    }
+    } catch { /* silent */ }
+    finally { setSaving(false) }
   }
 
   const toggle = () => {
@@ -64,93 +52,76 @@ export default function OrchestratorTab({ agentId }: Props) {
   }
 
   if (loading) return (
-    <div style={{ padding: 24, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text3)', fontSize: 12 }}>
-      <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading…
+    <div style={{ padding: 24, display: 'flex', alignItems: 'center', gap: 8, color: '#9B9B9B', fontSize: 13 }}>
+      <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading...
     </div>
   )
 
   return (
-    <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, background: 'rgba(124,111,240,0.06)', border: '1px solid rgba(124,111,240,0.15)' }}>
-        <Brain size={14} color="var(--blue)" />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 1 }}>Orchestrator</div>
-          <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.5 }}>Routes user messages intelligently — answers questions mid-flow, jumps to relevant steps, or handles off-topic chat.</div>
+      {/* Info box */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, background: '#F7F7F8', border: '1px solid #E5E5E5' }}>
+        <Brain size={15} color="#2563EB" style={{ flexShrink: 0, marginTop: 1 }} />
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0D0D0D', marginBottom: 3 }}>Orchestrator</div>
+          <div style={{ fontSize: 12, color: '#6B6B6B', lineHeight: 1.55 }}>Routes user messages intelligently. Answers questions mid-flow, jumps to relevant steps, or handles off-topic chat.</div>
         </div>
       </div>
 
       {/* Toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E5E5', background: '#fff' }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 1 }}>Enable orchestrator</div>
-          <div style={{ fontSize: 10, color: 'var(--text3)' }}>Adds one LLM call before each run</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0D0D0D', marginBottom: 2 }}>Enable orchestrator</div>
+          <div style={{ fontSize: 12, color: '#9B9B9B' }}>Adds one LLM call before each run</div>
         </div>
-        <button
-          onClick={toggle}
-          disabled={saving}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: config.enabled ? 'var(--blue)' : 'var(--text3)', opacity: saving ? 0.5 : 1, display: 'flex', alignItems: 'center' }}
-        >
-          {config.enabled ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+        <button onClick={toggle} disabled={saving}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: config.enabled ? '#2563EB' : '#C2C2C2', opacity: saving ? 0.5 : 1, display: 'flex', alignItems: 'center', transition: 'color 0.15s' }}>
+          {config.enabled ? <ToggleRight size={30} /> : <ToggleLeft size={30} />}
         </button>
       </div>
 
-      {/* Model selector — only shown when enabled */}
+      {/* Model selector */}
       {config.enabled && (
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-            Orchestrator Model
-          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#9B9B9B', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7 }}>Orchestrator Model</div>
           {models.length === 0 ? (
-            <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(245,160,32,0.08)', border: '1px solid rgba(245,160,32,0.25)', fontSize: 11, color: '#f5a020' }}>
-              No models registered yet. Add a model in the Models tab first.
+            <div style={{ padding: '10px 12px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: 12, color: '#D97706' }}>
+              No models configured yet. Add one in the Models page.
             </div>
           ) : (
-            <select
-              value={config.model}
-              onChange={e => setModel(e.target.value)}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 12, outline: 'none', cursor: 'pointer' }}
-            >
-              <option value="">— select a model —</option>
+            <select value={config.model} onChange={e => setModel(e.target.value)}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #E5E5E5', background: '#fff', color: config.model ? '#0D0D0D' : '#9B9B9B', fontSize: 13, outline: 'none', cursor: 'pointer', appearance: 'none' }}>
+              <option value="">Select a model</option>
               {models.map(m => (
                 <option key={m.id} value={m.name}>{m.name} ({m.provider})</option>
               ))}
             </select>
           )}
-          <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text3)', lineHeight: 1.6 }}>
-            Tip: Use a fast, cheap model (e.g. Gemini Flash) — it only needs to decide routing, not generate full responses.
+          <div style={{ marginTop: 6, fontSize: 11, color: '#9B9B9B', lineHeight: 1.55 }}>
+            Use a fast, cheap model (e.g. Gemini Flash). It only classifies intent, not generate responses.
           </div>
         </div>
       )}
 
-      {/* Behavior explanation */}
+      {/* Behavior table */}
       {config.enabled && (
-        <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-            What the orchestrator does
-          </div>
+        <div style={{ padding: '12px 14px', borderRadius: 10, background: '#F7F7F8', border: '1px solid #E5E5E5' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#9B9B9B', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Routing decisions</div>
           {[
-            { label: 'CONTINUE', desc: 'User message fits the workflow — runs normally' },
-            { label: 'ANSWER', desc: 'User asked a workflow-related question — answers it inline then continues' },
-            { label: 'JUMP', desc: 'User wants a specific step — jumps directly to that node' },
-            { label: 'CHITCHAT', desc: 'Completely off-topic — responds conversationally, workflow skipped' },
+            { label: 'CONTINUE', desc: 'Message fits the workflow, runs normally' },
+            { label: 'ANSWER', desc: 'Answers a domain question inline, then continues' },
+            { label: 'JUMP', desc: 'Jumps directly to a named workflow step' },
+            { label: 'RESPOND', desc: 'Off-topic chat, responds without running workflow' },
           ].map(({ label, desc }) => (
-            <div key={label} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'monospace', color: 'var(--blue)', flexShrink: 0, width: 60 }}>{label}</span>
-              <span style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.5 }}>{desc}</span>
+            <div key={label} style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'monospace', color: '#2563EB', flexShrink: 0, width: 64 }}>{label}</span>
+              <span style={{ fontSize: 11, color: '#6B6B6B', lineHeight: 1.5 }}>{desc}</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* Save status */}
-      {status !== 'idle' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: status === 'saved' ? 'var(--green)' : '#e85555' }}>
-          {status === 'saved' ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-          {status === 'saved' ? 'Saved' : 'Save failed'}
-        </div>
-      )}
     </div>
   )
 }

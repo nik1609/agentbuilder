@@ -6,7 +6,7 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import {
   Zap, ArrowRight, Code2, Globe, Shield, MessageSquare, BookOpen,
   GitBranch, Cpu, RefreshCw, UserCheck, CheckCircle, X,
-  Mail, Lock, Eye, EyeOff, Loader2, ChevronRight, Sun, Moon,
+  Mail, Lock, Eye, EyeOff, Loader2, ChevronRight, Sun, Moon, HelpCircle,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,14 +44,14 @@ const PROVIDERS = ['OpenAI','Gemini','Claude','Groq','Mistral','Llama','Ollama',
 const PCOLORS:Record<string,string> = { OpenAI:'#10a37f',Gemini:'#4285F4',Claude:'#d97706',Groq:'#f55036',Mistral:'#ff7000',Llama:'#A1A1AA',Ollama:'#A1A1AA','Any OpenAI-compatible API':'#71717A' }
 
 const NODE_TYPES = [
-  { name:'LLM',         color:'#7C3AED', desc:'Call any language model with a system prompt' },
-  { name:'Tool',        color:'#0891B2', desc:'HTTP calls, code execution, web search' },
-  { name:'Condition',   color:'#16A34A', desc:'Binary yes/no routing evaluated by LLM' },
-  { name:'Switch',      color:'#D97706', desc:'Multi-way routing for 3+ branches' },
-  { name:'Loop',        color:'#EA580C', desc:'Repeat until exit condition is met' },
-  { name:'Fork / Join', color:'#9333EA', desc:'Parallel execution, merge results' },
-  { name:'HITL',        color:'#DB2777', desc:'Pause for human approval mid-run' },
-  { name:'Clarify',     color:'#DC2626', desc:'Ask user a question mid-run' },
+  { name:'AI Step',      color:'#7C3AED', desc:'Call any language model with a system prompt' },
+  { name:'Action',       color:'#0891B2', desc:'HTTP calls, code execution, web search' },
+  { name:'Branch',       color:'#16A34A', desc:'Binary yes/no routing evaluated by AI' },
+  { name:'Switch',       color:'#D97706', desc:'Multi-way routing for 3+ branches' },
+  { name:'Loop',         color:'#EA580C', desc:'Repeat until exit condition is met' },
+  { name:'Fork / Join',  color:'#9333EA', desc:'Parallel execution, merge results' },
+  { name:'Human Review', color:'#DB2777', desc:'Pause for human approval mid-run' },
+  { name:'Ask User',     color:'#DC2626', desc:'Ask user a question mid-run' },
 ]
 const FEATURE_CHIPS = ['LLM Agents','Visual Builder','REST APIs','Loops + Parallel','Human-in-the-Loop','Guardrails','MCP Connectors','Full Observability']
 
@@ -99,9 +99,9 @@ function WorkflowPanel() {
 
   const nodeData: Record<string,{col:string; label:string; sub:string; state:'done'|'running'|'waiting'|'pending'}> = {
     in:   {col:'#374151', label:'Input',              sub:'message: "Research..."',   state:'done'   },
-    llm:  {col:'#7C3AED', label:'LLM · Claude',       sub:'reasoning + planning',    state:'done'   },
-    tool: {col:'#0891B2', label:'Tool · Search',       sub:'retrieving sources...',   state:'running'},
-    cond: {col:'#16A34A', label:'Condition · Quality', sub:'score threshold check',   state:'waiting'},
+    llm:  {col:'#7C3AED', label:'AI Step · Claude',    sub:'reasoning + planning',    state:'done'   },
+    tool: {col:'#0891B2', label:'Action · Search',     sub:'retrieving sources...',   state:'running'},
+    cond: {col:'#16A34A', label:'Branch · Quality',    sub:'score threshold check',   state:'waiting'},
     out:  {col:'#6B7280', label:'Output · REST API',   sub:'return structured JSON',  state:'pending'},
   }
 
@@ -290,7 +290,7 @@ function AuthModal({ mode, onClose, onSwitch, T }: { mode:'signin'|'signup'; onC
     if (isSignIn) {
       const { error:err } = await sb.auth.signInWithPassword({ email:email.trim(), password:pwd })
       if (err) { setError(err.message==='Invalid login credentials'?'Incorrect email or password. Try Continue with Google if you signed up that way.':err.message); setLoad(false) }
-      else { router.push('/agents'); router.refresh() }
+      else { router.push('/dashboard'); router.refresh() }
     } else {
       const { error:err } = await sb.auth.signUp({ email:email.trim(), password:pwd })
       if (err) { setError(err.message); setLoad(false) } else { setDone(true); setLoad(false) }
@@ -314,8 +314,8 @@ function AuthModal({ mode, onClose, onSwitch, T }: { mode:'signin'|'signup'; onC
           <>
             <div style={{ marginBottom:24 }}>
               <p style={{ fontSize:11, fontWeight:600, color:T.text3, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>AgentHub</p>
-              <h2 style={{ fontSize:22, fontWeight:700, color:T.text, letterSpacing:'-0.02em', marginBottom:6 }}>{isSignIn?'Welcome back':'Create your account'}</h2>
-              <p style={{ fontSize:14, color:T.text3 }}>{isSignIn?'Sign in to access your agents':'Free to start. Bring your own API keys.'}</p>
+              <h2 style={{ fontFamily:'var(--font-playfair,"Playfair Display",Georgia,serif)', fontSize:26, fontWeight:700, color:T.text, letterSpacing:'-0.02em', lineHeight:1.15, marginBottom:8 }}>{isSignIn?'Welcome back.':'Create your account.'}</h2>
+              <p style={{ fontSize:13, color:T.text3, lineHeight:1.6 }}>{isSignIn?'Sign in to access your agents.':'Free to start. Bring your own API keys.'}</p>
             </div>
             <button onClick={signInWithGoogle} disabled={gLoad||loading}
               style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:10, padding:'11px 20px', borderRadius:10, border:`1px solid ${T.modalGoogleBorder}`, background:T.modalGoogleBg, color:T.text, fontSize:14, fontWeight:500, cursor:gLoad?'not-allowed':'pointer', marginBottom:20, transition:'all 0.15s' }}
@@ -402,8 +402,10 @@ const CODE:Record<CodeTab,React.ReactNode> = {
 // Main page
 // ─────────────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
+  const router = useRouter()
   const [isDark,setIsDark]       = useState(true)
   const [authModal,setAuthModal] = useState<null|'signin'|'signup'>(null)
+  const [isLoggedIn,setIsLoggedIn] = useState(false)
   const [codeTab,setCodeTab]     = useState<CodeTab>('JavaScript')
   const [cName,setCName]         = useState('')
   const [cEmail,setCEmail]       = useState('')
@@ -411,22 +413,128 @@ export default function LandingPage() {
   const [cSending,setCSending]   = useState(false)
   const [cSent,setCSent]         = useState(false)
   const [cError,setCError]       = useState('')
-  const followerRef = useRef<HTMLDivElement>(null)
+  const mouseRef   = useRef({ x: -9999, y: -9999 })
+  const animRef    = useRef(0)
+  const isDarkRef  = useRef(isDark)
   const T = isDark ? DARK_T : LIGHT_T
 
+  useEffect(()=>{
+    createSupabaseBrowserClient().auth.getSession().then(({ data:{ session } })=>{
+      if (session) setIsLoggedIn(true)
+    })
+  },[])
   useEffect(()=>{
     const s=localStorage.getItem('agenthub-landing-dark')
     if(s!==null) setIsDark(s==='true')
     else setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches)
   },[])
   const toggleTheme = () => setIsDark(d=>{ localStorage.setItem('agenthub-landing-dark',String(!d)); return !d })
+  const openAuth = (mode:'signin'|'signup') => { if (isLoggedIn) { router.push('/dashboard') } else { setAuthModal(mode) } }
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{ if(e.key==='Escape') setAuthModal(null) }; document.addEventListener('keydown',h); return ()=>document.removeEventListener('keydown',h) },[])
+  useEffect(()=>{ document.body.style.background = T.pageBg; isDarkRef.current = isDark },[isDark])
   useEffect(()=>{
-    if (!isDark) return
-    const h=(e:MouseEvent)=>{ if(followerRef.current){ followerRef.current.style.left=`${e.clientX-350}px`; followerRef.current.style.top=`${e.clientY-350}px`; followerRef.current.style.opacity='1' } }
-    window.addEventListener('mousemove',h)
-    return ()=>{ window.removeEventListener('mousemove',h); if(followerRef.current) followerRef.current.style.opacity='0' }
-  },[isDark])
+    const canvas = document.createElement('canvas')
+    canvas.style.cssText = 'position:fixed;inset:0;z-index:0;pointer-events:none;'
+    document.body.prepend(canvas)
+    const ctx = canvas.getContext('2d')!
+
+    // Each particle has a fixed home it always springs back to
+    type P = { ox:number; oy:number; x:number; y:number; vx:number; vy:number }
+    let particles: P[] = []
+
+    const seed = () => {
+      particles = Array.from({ length: 60 }, () => {
+        const ox = Math.random() * canvas.width
+        const oy = Math.random() * canvas.height
+        return { ox, oy, x:ox, y:oy, vx:0, vy:0 }
+      })
+    }
+    const resize = () => {
+      canvas.width  = window.innerWidth
+      canvas.height = window.innerHeight
+      seed()
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
+    const ATTRACT_R = 140   // cursor attracts particles within this radius
+    const DAMPING   = 0.98  // very gentle damping — particles keep drifting
+    const PULL      = 0.18  // cursor pull strength
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      const dark  = isDarkRef.current
+      const rgb   = dark ? '255,255,255' : '0,0,0'
+      // Dark: --dark-text2 (#A1A1AA) feel — bright enough to see on #050505
+      // Light: barely-there gray on white — texture only
+      const dotA  = dark ? 0.5  : 0.13
+      const lineA = dark ? 0.03 : 0.08
+      const mouse = mouseRef.current
+
+      for (const p of particles) {
+        // cursor pull
+        if (mouse.x !== -9999) {
+          const dx = mouse.x - p.x, dy = mouse.y - p.y
+          const d  = Math.sqrt(dx*dx + dy*dy)
+          if (d < ATTRACT_R && d > 1) {
+            p.vx += (dx / d) * PULL
+            p.vy += (dy / d) * PULL
+          }
+        }
+
+        // random drift — always wandering
+        p.vx += (Math.random() - 0.5) * 0.02
+        p.vy += (Math.random() - 0.5) * 0.02
+
+        // speed cap so they don't fly off
+        const spd = Math.sqrt(p.vx*p.vx + p.vy*p.vy)
+        if (spd > 1.5) { p.vx = p.vx/spd*1.5; p.vy = p.vy/spd*1.5 }
+
+        p.vx *= DAMPING
+        p.vy *= DAMPING
+        p.x  += p.vx
+        p.y  += p.vy
+
+        // wrap edges — particles reappear on the other side
+        if (p.x < 0) p.x = canvas.width
+        if (p.x > canvas.width)  p.x = 0
+        if (p.y < 0) p.y = canvas.height
+        if (p.y > canvas.height) p.y = 0
+
+        // draw dot
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, dark ? 0.85 : 1.3, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(${rgb},${dotA})`
+        ctx.fill()
+
+        // line to cursor when attracted
+        if (mouse.x !== -9999) {
+          const dx = mouse.x - p.x, dy = mouse.y - p.y
+          const d  = Math.sqrt(dx*dx + dy*dy)
+          if (d < ATTRACT_R) {
+            ctx.strokeStyle = `rgba(${rgb},${(1 - d / ATTRACT_R) * lineA})`
+            ctx.lineWidth   = 0.7
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke()
+          }
+        }
+      }
+
+      animRef.current = requestAnimationFrame(draw)
+    }
+    draw()
+
+    const onMove  = (e:MouseEvent) => { mouseRef.current = { x:e.clientX, y:e.clientY } }
+    const onLeave = () => { mouseRef.current = { x:-9999, y:-9999 } }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseleave', onLeave)
+    return () => {
+      window.removeEventListener('resize', resize)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseleave', onLeave)
+      cancelAnimationFrame(animRef.current)
+      canvas.remove()
+    }
+  },[])
 
   const sendContact = async (e:React.FormEvent) => {
     e.preventDefault(); if(!cEmail.trim()||!cMsg.trim()) return
@@ -447,10 +555,95 @@ export default function LandingPage() {
     </a>
   )
 
-  return (
-    <div style={{ minHeight:'100vh', background:T.pageBg, color:T.text, fontFamily:'var(--font-sans,Inter,sans-serif)', transition:'background 0.3s,color 0.3s' }}>
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "AgentHub",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web",
+        "description": "AgentHub is a visual AI agent builder that lets engineers build, deploy, and integrate AI agents without writing boilerplate. Connect AI Step, Action, Branch, Switch, Loop, Fork, Join, Human Review, and Ask User nodes on a drag-and-drop canvas. Every agent is automatically exposed as a live REST API.",
+        "featureList": [
+          "Visual drag-and-drop AI agent canvas",
+          "AI Step nodes for calling any LLM (OpenAI, Gemini, Claude, Groq, Ollama)",
+          "Action nodes for HTTP calls, web search, web scraping, code execution, and datatables",
+          "Branch and Switch nodes for conditional routing",
+          "Loop nodes for iterative refinement",
+          "Fork and Join nodes for parallel execution",
+          "Human Review nodes for human-in-the-loop approval",
+          "Ask User nodes for mid-run clarification",
+          "Automatic REST API deployment for every agent",
+          "Real-time SSE streaming",
+          "Execution trace and waterfall chart per run",
+          "Memory configs for conversation history",
+          "Guardrails for input/output safety",
+          "Prompts library for reusable system prompts",
+          "Datatables for structured data import/export",
+          "Orchestrator for smart clarify routing",
+          "API key management",
+          "Multi-provider LLM support",
+        ],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "url": "https://agenthub.nik10x.com",
+      },
+      {
+        "@type": "WebSite",
+        "name": "AgentHub",
+        "url": "https://agenthub.nik10x.com",
+        "description": "Visual AI agent builder. Build multi-step AI pipelines on a canvas and deploy them as REST APIs.",
+        "potentialAction": { "@type": "SearchAction", "target": "https://agenthub.nik10x.com/docs" },
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          { "@type": "Question", "name": "What is AgentHub?", "acceptedAnswer": { "@type": "Answer", "text": "AgentHub is a visual AI agent builder. You connect nodes on a canvas — AI Step (LLM), Action (tools), Branch, Switch, Loop, Fork, Join, Human Review, Ask User — and every agent is automatically deployed as a REST API." } },
+          { "@type": "Question", "name": "What LLM providers does AgentHub support?", "acceptedAnswer": { "@type": "Answer", "text": "AgentHub supports Google Gemini, OpenAI, Anthropic Claude, Groq, Ollama, and any OpenAI-compatible API endpoint including LM Studio and Mistral." } },
+          { "@type": "Question", "name": "How do I call an AgentHub agent from my application?", "acceptedAnswer": { "@type": "Answer", "text": "Every agent is available as a REST API. Send a POST request to /api/agents/{agentId}/run with your message and X-AgentHub-Key header. The response includes the output, token count, and execution trace." } },
+          { "@type": "Question", "name": "What is a Human Review node?", "acceptedAnswer": { "@type": "Answer", "text": "A Human Review (HITL) node pauses the agent pipeline and waits for a human to approve, request revision, or reject before the agent continues. Useful for content approval, compliance checks, or any irreversible action." } },
+          { "@type": "Question", "name": "Can agents run in parallel?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Fork nodes split execution into multiple parallel branches that all run simultaneously. A Join node collects the results and merges them as an array, object, or concatenated text." } },
+        ],
+      },
+    ],
+  }
 
-      {isDark&&<div ref={followerRef} style={{ position:'fixed', width:700, height:700, borderRadius:'50%', background:'radial-gradient(circle,rgba(37,99,235,0.07) 0%,transparent 65%)', pointerEvents:'none', zIndex:0, opacity:0, transition:'left 0.12s ease,top 0.12s ease' }}/>}
+  return (
+    <div style={{ minHeight:'100vh', background:'transparent', color:T.text, fontFamily:'var(--font-sans,Inter,sans-serif)', transition:'color 0.3s' }}>
+
+      {/* JSON-LD structured data — invisible to users, readable by crawlers */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+
+      {/* Visually hidden semantic content block — for crawlers */}
+      <div aria-hidden="false" style={{ position:'absolute', width:1, height:1, overflow:'hidden', clip:'rect(0,0,0,0)', whiteSpace:'nowrap' }}>
+        <h1>AgentHub — Visual AI Agent Builder</h1>
+        <p>Build multi-step AI agent pipelines on a visual drag-and-drop canvas. Connect AI Step nodes (LLMs), Action nodes (tools, web search, code execution), Branch and Switch nodes for routing, Loop nodes for iteration, Fork and Join nodes for parallel execution, Human Review nodes for human-in-the-loop approval, and Ask User nodes for mid-run clarification. Deploy every agent as a live REST API with one click.</p>
+        <h2>Node Types</h2>
+        <ul>
+          <li>AI Step: call any language model (OpenAI GPT-4o, Google Gemini, Anthropic Claude, Groq Llama, Ollama) with a system prompt and conversation memory.</li>
+          <li>Action: run tools including HTTP API calls, web search (DuckDuckGo, Tavily, Serper), web scraping (Jina Reader), Python/JavaScript/Bash code execution, and datatable operations.</li>
+          <li>Branch: binary yes/no conditional routing evaluated by an AI model.</li>
+          <li>Switch: multi-way routing for 3 or more branches using LLM classification.</li>
+          <li>Loop: repeat a section of the pipeline until an exit condition is met or a maximum iteration count is reached.</li>
+          <li>Fork and Join: split execution into parallel branches that run simultaneously, then merge results.</li>
+          <li>Human Review: pause the pipeline for human approval, revision request, or rejection before continuing.</li>
+          <li>Ask User: pause and ask the user a clarifying question, then continue with their answer.</li>
+          <li>Transform: pass data through with optional template transformations.</li>
+          <li>Start and End: required entry and exit points for every agent pipeline.</li>
+        </ul>
+        <h2>Key Features</h2>
+        <ul>
+          <li>Visual canvas: drag, drop, and connect nodes to build AI pipelines.</li>
+          <li>REST API deployment: every agent is immediately available as a POST endpoint.</li>
+          <li>Real-time streaming: SSE streaming with token-by-token output.</li>
+          <li>Execution trace: waterfall chart and step-by-step trace for every run.</li>
+          <li>Memory: sliding window, full history, or AI-summarized conversation memory.</li>
+          <li>Guardrails: input and output safety rules with keyword and pattern matching.</li>
+          <li>Prompts library: reusable system prompts with template variable support.</li>
+          <li>Datatables: structured data tables for import (LLM context) and export (structured output).</li>
+          <li>Orchestrator: smart clarify routing that classifies user messages during agent pauses.</li>
+          <li>Multi-provider LLM: OpenAI, Google Gemini, Anthropic, Groq, Ollama, and any OpenAI-compatible endpoint.</li>
+        </ul>
+      </div>
 
       {/* ── Nav ─────────────────────────────────────────────────────── */}
       <nav style={{ position:'sticky', top:0, zIndex:100, background:T.navBg, backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', borderBottom:`1px solid ${T.border}` }}>
@@ -463,44 +656,46 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            {/* Theme toggle */}
-            <button onClick={toggleTheme} title={isDark?'Light mode':'Dark mode'}
-              style={{ width:32, height:32, borderRadius:8, background:T.secBg, border:`1px solid ${T.secBorder}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:T.text3, transition:'all 0.15s' }}
-              onMouseEnter={e=>(e.currentTarget.style.background=T.secHoverBg)}
-              onMouseLeave={e=>(e.currentTarget.style.background=T.secBg)}>
-              {isDark?<Sun size={14}/>:<Moon size={14}/>}
-            </button>
+          <div style={{ display:'flex', alignItems:'center', gap:2 }}>
             {/* Why? */}
             <a href="#lp-why"
-              style={{ fontSize:13, padding:'6px 12px', color:T.secText, textDecoration:'none', fontWeight:500, borderRadius:8, background:T.secBg, border:`1px solid ${T.secBorder}`, transition:'all 0.15s', display:'inline-flex', alignItems:'center' }}
-              onMouseEnter={e=>{ e.currentTarget.style.background=T.secHoverBg; e.currentTarget.style.borderColor=T.secHoverBorder }}
-              onMouseLeave={e=>{ e.currentTarget.style.background=T.secBg; e.currentTarget.style.borderColor=T.secBorder }}>
-              Why?
+              style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:13, padding:'5px 10px', borderRadius:8, color:T.text3, textDecoration:'none', fontWeight:500, background:'transparent', transition:'background 0.15s,color 0.15s' }}
+              onMouseEnter={e=>{ e.currentTarget.style.background=T.secBg; e.currentTarget.style.color=T.text2 }}
+              onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color=T.text3 }}>
+              <HelpCircle size={13} strokeWidth={1.8}/> Why?
             </a>
-            {/* Contact us */}
+            {/* Contact */}
             <a href="#lp-contact"
-              style={{ fontSize:13, padding:'6px 12px', color:T.secText, textDecoration:'none', fontWeight:500, borderRadius:8, background:T.secBg, border:`1px solid ${T.secBorder}`, transition:'all 0.15s', display:'inline-flex', alignItems:'center' }}
-              onMouseEnter={e=>{ e.currentTarget.style.background=T.secHoverBg; e.currentTarget.style.borderColor=T.secHoverBorder }}
-              onMouseLeave={e=>{ e.currentTarget.style.background=T.secBg; e.currentTarget.style.borderColor=T.secBorder }}>
-              Contact us
+              style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:13, padding:'5px 10px', borderRadius:8, color:T.text3, textDecoration:'none', fontWeight:500, background:'transparent', transition:'background 0.15s,color 0.15s' }}
+              onMouseEnter={e=>{ e.currentTarget.style.background=T.secBg; e.currentTarget.style.color=T.text2 }}
+              onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color=T.text3 }}>
+              Contact
             </a>
             {/* Divider */}
-            <div style={{ width:1, height:18, background:T.border, margin:'0 2px' }}/>
-            {/* Sign in */}
-            <button onClick={()=>setAuthModal('signin')}
-              style={{ fontSize:13, padding:'6px 14px', borderRadius:8, fontWeight:500, color:T.secText, background:T.secBg, border:`1px solid ${T.secBorder}`, cursor:'pointer', transition:'all 0.15s' }}
-              onMouseEnter={e=>{ e.currentTarget.style.background=T.secHoverBg; e.currentTarget.style.borderColor=T.secHoverBorder }}
-              onMouseLeave={e=>{ e.currentTarget.style.background=T.secBg; e.currentTarget.style.borderColor=T.secBorder }}>
-              Sign in
+            <div style={{ width:1, height:18, background:T.border, margin:'0 6px' }}/>
+            {/* Theme toggle */}
+            <button onClick={toggleTheme} title={isDark?'Light mode':'Dark mode'}
+              style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:8, background:'transparent', border:'none', cursor:'pointer', color:T.text3, transition:'background 0.15s,color 0.15s' }}
+              onMouseEnter={e=>{ e.currentTarget.style.background=T.secBg; e.currentTarget.style.color=T.text2 }}
+              onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color=T.text3 }}>
+              {isDark?<Sun size={15}/>:<Moon size={15}/>}
             </button>
             {/* Get started */}
-            <button onClick={()=>setAuthModal('signup')}
-              style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:13, padding:'6px 14px', borderRadius:8, fontWeight:600, background:T.btnBg, color:T.btnText, border:'none', cursor:'pointer', transition:'transform 0.15s' }}
+            <button onClick={()=>openAuth('signup')}
+              style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:13, padding:'7px 16px', borderRadius:9, fontWeight:600, background:T.btnBg, color:T.btnText, border:'none', cursor:'pointer', transition:'transform 0.15s' }}
               onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.transform='translateY(-1px)'}}
               onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.transform='translateY(0)'}}>
-              <Zap size={12} strokeWidth={2.5}/> Get started
+              <Zap size={12} strokeWidth={2.5}/> {isLoggedIn ? 'Go to dashboard' : 'Get started'}
             </button>
+            {/* Sign in — hidden when logged in */}
+            {!isLoggedIn && (
+              <button onClick={()=>setAuthModal('signin')}
+                style={{ fontSize:13, padding:'7px 16px', borderRadius:9, fontWeight:500, color:T.secText, background:'none', border:`1px solid ${T.border}`, cursor:'pointer', transition:'all 0.15s' }}
+                onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.borderHi; e.currentTarget.style.color=T.text }}
+                onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.secText }}>
+                Sign in
+              </button>
+            )}
           </div>
         </div>
       </nav>
@@ -577,8 +772,8 @@ export default function LandingPage() {
               AgentHub gives you the primitives to build production-grade AI workflows without writing orchestration logic from scratch.
             </p>
           </div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
-            {FEATURE_CHIPS.map(chip=>(<span key={chip} style={{ fontSize:11, fontWeight:500, padding:'4px 12px', borderRadius:20, background:T.surface2, border:`1px solid ${T.border}`, color:T.text3, transition:'color 0.15s,border-color 0.15s' }}>{chip}</span>))}
+          <div style={{ display:'flex', flexWrap:'nowrap', gap:7, overflowX:'auto' }}>
+            {FEATURE_CHIPS.map(chip=>(<span key={chip} style={{ fontSize:11, fontWeight:500, padding:'4px 12px', borderRadius:20, background:T.surface2, color:T.text3, whiteSpace:'nowrap', flexShrink:0 }}>{chip}</span>))}
           </div>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:14, marginBottom:14 }}>
@@ -589,9 +784,9 @@ export default function LandingPage() {
           </div>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:14 }}>
-          <FCardSm T={T} icon={GitBranch} iconColor="#16A34A" title="Conditional Routing" desc="Condition and Switch nodes route based on what the model finds at runtime."/>
+          <FCardSm T={T} icon={GitBranch} iconColor="#16A34A" title="Conditional Routing" desc="Branch and Switch nodes route based on what the model finds at runtime."/>
           <FCardSm T={T} icon={RefreshCw} iconColor="#EA580C" title="Loops + Parallel"    desc="Loop until quality passes. Fork/Join runs branches simultaneously."/>
-          <FCardSm T={T} icon={UserCheck} iconColor="#DB2777" title="Human-in-the-Loop"   desc="HITL nodes pause for human review before the agent continues."/>
+          <FCardSm T={T} icon={UserCheck} iconColor="#DB2777" title="Human-in-the-Loop"   desc="Human Review nodes pause for human approval before the agent continues."/>
           <FCardSm T={T} icon={Shield}    iconColor="#9333EA" title="Guardrails"          desc="Block bad input and filter unsafe output per-node, not globally."/>
         </div>
       </section>
@@ -607,7 +802,7 @@ export default function LandingPage() {
             <p style={{ fontSize:15, color:T.text2, lineHeight:1.7, marginBottom:32 }}>
               Every agent you build instantly becomes a REST endpoint. Drop it into any product, backend service, or automation pipeline. JavaScript, Python, cURL, or any HTTP client. One POST call is all it takes.
             </p>
-            <button onClick={()=>setAuthModal('signup')} style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'11px 20px', borderRadius:10, fontWeight:600, fontSize:14, background:T.btnBg, color:T.btnText, border:'none', cursor:'pointer', transition:'transform 0.15s' }}
+            <button onClick={()=>openAuth('signup')} style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'11px 20px', borderRadius:10, fontWeight:600, fontSize:14, background:T.btnBg, color:T.btnText, border:'none', cursor:'pointer', transition:'transform 0.15s' }}
               onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.transform='translateY(-2px)'}}
               onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.transform='translateY(0)'}}>
               Get your API key <ChevronRight size={14}/>
@@ -862,9 +1057,9 @@ export default function LandingPage() {
             {/* Company */}
             <div>
               <div style={{ fontSize:10, fontWeight:700, color:T.text3, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:16 }}>Company</div>
-              <button onClick={()=>setAuthModal('signup')} style={{ display:'block', fontSize:12, color:T.text2, background:'none', border:'none', cursor:'pointer', padding:0, marginBottom:9, textAlign:'left', transition:'color 0.1s' }}
+              <button onClick={()=>openAuth('signup')} style={{ display:'block', fontSize:12, color:T.text2, background:'none', border:'none', cursor:'pointer', padding:0, marginBottom:9, textAlign:'left', transition:'color 0.1s' }}
                 onMouseEnter={e=>(e.currentTarget.style.color=T.text)} onMouseLeave={e=>(e.currentTarget.style.color=T.text2)}>Sign up</button>
-              <button onClick={()=>setAuthModal('signin')} style={{ display:'block', fontSize:12, color:T.text2, background:'none', border:'none', cursor:'pointer', padding:0, marginBottom:9, textAlign:'left', transition:'color 0.1s' }}
+              <button onClick={()=>openAuth('signin')} style={{ display:'block', fontSize:12, color:T.text2, background:'none', border:'none', cursor:'pointer', padding:0, marginBottom:9, textAlign:'left', transition:'color 0.1s' }}
                 onMouseEnter={e=>(e.currentTarget.style.color=T.text)} onMouseLeave={e=>(e.currentTarget.style.color=T.text2)}>Sign in</button>
               <a href="#lp-contact" style={{ display:'block', fontSize:12, color:T.text2, textDecoration:'none', marginBottom:9, transition:'color 0.1s' }}
                 onMouseEnter={e=>(e.currentTarget.style.color=T.text)} onMouseLeave={e=>(e.currentTarget.style.color=T.text2)}>Contact us</a>

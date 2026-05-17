@@ -5,47 +5,51 @@ import { NodeData } from '@/types/agent'
 import NodeIdChip from './NodeIdChip'
 
 const COLOR = '#f472b6'
-const BG = 'rgba(244,114,182,0.15)'
 
 export default function ClarifyNode({ id, data, selected }: NodeProps) {
   const d = data as NodeData
+  const question = d.staticQuestion ?? d.clarifySystemPrompt
+  const preview = question
+    ? String(question).slice(0, 60) + (String(question).length > 60 ? '…' : '')
+    : null
+  const mode = (d.clarifyMode as string) ?? 'llm'
+
   return (
     <div style={{
-      minWidth: 180, borderRadius: 12, overflow: 'hidden', cursor: 'grab',
-      background: 'var(--surface)',
-      borderStyle: 'solid',
-      borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 3,
-      borderTopColor: selected ? COLOR : 'var(--border)',
-      borderRightColor: selected ? COLOR : 'var(--border)',
-      borderBottomColor: selected ? COLOR : 'var(--border)',
-      borderLeftColor: COLOR,
-      boxShadow: selected ? `0 0 0 2px ${COLOR}4d, 0 4px 20px rgba(0,0,0,0.4)` : '0 2px 12px rgba(0,0,0,0.3)',
+      minWidth: 190, maxWidth: 250,
+      borderRadius: 12, overflow: 'visible', cursor: 'grab',
+      background: 'var(--bg)',
+      border: `1.5px solid ${selected ? COLOR : 'var(--border)'}`,
+      boxShadow: selected
+        ? `0 0 0 3px ${COLOR}1A, 0 4px 16px rgba(0,0,0,0.1)`
+        : '0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)',
+      transition: 'border-color 0.15s, box-shadow 0.15s',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px 6px', borderBottom: '1px solid var(--border2)' }}>
-        <div style={{ width: 20, height: 20, borderRadius: 6, background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <HelpCircle size={11} color={COLOR} />
+      <Handle type="target" position={Position.Top}
+        style={{ width: 10, height: 10, background: 'var(--bg)', border: `2px solid ${COLOR}`, top: -6 }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px 8px', borderBottom: '1px solid var(--border2)', borderRadius: '12px 12px 0 0', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 5, background: `${COLOR}14`, flexShrink: 0 }}>
+          <HelpCircle size={10} color={COLOR} />
+          <span style={{ fontSize: 8, fontWeight: 800, color: COLOR, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Ask User</span>
         </div>
-        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: COLOR }}>Clarify</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {d.label}
+        </span>
+        <NodeIdChip id={id} />
       </div>
-      <div style={{ padding: '8px 12px 10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 3 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
-          <NodeIdChip id={id} />
-        </div>
-        {d.clarifyMode === 'static' ? (
-          <div style={{ fontSize: 10, color: COLOR, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontStyle: 'italic' }}>
-            &ldquo;{String(d.staticQuestion || 'Please provide more details.').slice(0, 60)}&rdquo;
-          </div>
-        ) : d.clarifySystemPrompt ? (
-          <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-            {String(d.clarifySystemPrompt).slice(0, 60)}
-          </div>
-        ) : (
-          <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4 }}>LLM-generated question</div>
-        )}
+
+      <div style={{ padding: '6px 12px 9px', borderRadius: '0 0 12px 12px', overflow: 'hidden', background: 'var(--bg)' }}>
+        <p style={{ fontSize: 11, color: preview ? 'var(--text3)' : 'var(--text4)', lineHeight: 1.55, margin: '0 0 5px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+          {preview ?? 'No question configured'}
+        </p>
+        <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: `${COLOR}14`, color: COLOR, fontWeight: 700 }}>
+          {mode === 'static' ? 'Fixed question' : 'AI generated'}
+        </span>
       </div>
-      <Handle type="target" position={Position.Top} title="Input — LLM reads this to generate a clarifying question" style={{ width: 10, height: 10, background: 'var(--surface2)', border: `2px solid ${COLOR}`, top: -6 }} />
-      <Handle type="source" position={Position.Bottom} title="Output — continues after user answers (answer included in context)" style={{ width: 10, height: 10, background: 'var(--surface2)', border: `2px solid ${COLOR}`, bottom: -6 }} />
+
+      <Handle type="source" position={Position.Bottom}
+        style={{ width: 10, height: 10, background: 'var(--bg)', border: `2px solid ${COLOR}`, bottom: -6 }} />
     </div>
   )
 }

@@ -42,7 +42,7 @@ const TYPE_COLORS: Record<TimelineBar['type'], { bar: string; bg: string; label:
   llm:  { bar: '#7c6ff0', bg: 'rgba(124,111,240,0.18)', label: 'LLM' },
   tool: { bar: '#22d79a', bg: 'rgba(34,215,154,0.18)',  label: 'Tool' },
   hitl: { bar: '#f5a020', bg: 'rgba(245,160,32,0.18)',  label: 'HITL' },
-  node: { bar: '#22d3ee', bg: 'rgba(34,211,238,0.18)',  label: 'Node' },
+  node: { bar: '#5ED7F7', bg: 'rgba(94,215,247,0.18)',  label: 'Node' },
 }
 
 const EVENT_DOT: Record<string, string> = {

@@ -53,6 +53,7 @@ Flow pauses until user replies. Answer is injected into next node.
 
 ### hitl — pause for human review/approval
 { "id": "n-hitl", "type": "hitl", "position": { "x": 400, "y": 370 }, "data": { "label": "Review", "nodeType": "hitl", "question": "Please review before I continue." } }
+Flow pauses. Reviewer approves/revises/rejects from the Runs page or via POST /api/runs/:runId/resume. Pipeline resumes with reviewer feedback injected as context.
 
 ### condition — binary yes/no branch
 { "id": "n-cond", "type": "condition", "position": { "x": 400, "y": 310 }, "data": { "label": "Is billing?", "nodeType": "condition", "condition": "the output contains BILLING" } }
@@ -62,10 +63,11 @@ Edges: sourceHandle "true" or "false"
 {
   "id": "n-switch", "type": "switch", "position": { "x": 400, "y": 310 },
   "data": { "label": "Route", "nodeType": "switch", "switchType": "llm_classify",
-    "cases": [{ "id": "c1", "label": "billing", "match": "billing" }, { "id": "c2", "label": "technical", "match": "technical" }]
+    "cases": [{ "label": "billing", "match": "billing" }, { "label": "technical", "match": "technical" }]
   }
 }
-Edge sourceHandle matches the case label string.
+switchType options: "value_match" (exact/contains), "expression" (JS: value/input/state["id"]), "llm_classify" (AI picks category).
+Edge sourceHandle = case label. defaultCase = label of fallback case.
 
 ### loop — repeat a section N times
 {
@@ -86,6 +88,7 @@ Edges use sourceHandle matching the branch label.
 
 ### passthrough — format/transform without LLM
 { "id": "n-pass", "type": "passthrough", "position": { "x": 400, "y": 310 }, "data": { "label": "Format", "nodeType": "passthrough", "template": "Results:\\n{{last_output}}" } }
+Template variables: {{last_output}} previous node · {{input}} original user message · {{input.field}} field from input object · {{node.NODE_ID}} specific upstream node · {{state.varname}} named variable (e.g. from Join's mergeAs)
 
 ## Positioning rules
 - Single-column: x=400, y=50 for input, increment 160 per node.
@@ -155,7 +158,11 @@ Rules:
 - Write detailed, task-specific system prompts for LLM nodes.
 - toolName in tool nodes must EXACTLY match the name field in tools[].
 - datatable_name in datatable tool inputSchema must EXACTLY match the name in datatables[].
-- When an agent both reads AND writes a datatable, create two separate tools (one mode: import, one mode: export) referencing the same datatable_name.`
+- When an agent both reads AND writes a datatable, create two separate tools (one mode: import, one mode: export) referencing the same datatable_name.
+- For Join nodes, set mergeAs to a short variable name (e.g. "results") so downstream nodes can reference it as {{state.results}}.
+- LLM node systemPrompts support {{last_output}}, {{input}}, {{node.ID}}, {{state.varname}} — use these to pass context between nodes.
+- When human approval is needed before an irreversible action (send email, write to DB, publish), add a hitl node before it.
+- API callers can pass callbackUrl in their POST /run request to receive results async via webhook — mention this if the user asks about production integration.`
 
 export async function POST(req: NextRequest) {
   const userId = await getUserFromSession()

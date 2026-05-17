@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { ExternalLink, Copy, CheckCircle, ArrowLeft, Save } from 'lucide-react'
+import { ExternalLink, Copy, CheckCircle, Save } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 interface AgentInfoTabProps {
@@ -57,28 +57,23 @@ export default function AgentInfoTab({ agentId, agentName }: AgentInfoTabProps) 
   }
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 10, fontWeight: 700, color: 'var(--text3)',
-    textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5,
+    fontSize: 10, fontWeight: 700, color: '#9B9B9B',
+    textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6,
   }
   const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 10px', borderRadius: 8,
-    border: '1px solid var(--border)', background: 'var(--bg)',
-    color: 'var(--text)', fontSize: 12, outline: 'none',
-    fontFamily: 'inherit', boxSizing: 'border-box',
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    border: '1px solid #E5E5E5', background: '#fff',
+    color: '#0D0D0D', fontSize: 13, outline: 'none',
+    fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.5,
   }
 
   return (
-    <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       {/* Name */}
       <div>
         <div style={labelStyle}>Agent Name</div>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="Untitled Agent"
-          style={inputStyle}
-        />
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Untitled Agent" style={inputStyle} />
       </div>
 
       {/* Description */}
@@ -87,83 +82,59 @@ export default function AgentInfoTab({ agentId, agentName }: AgentInfoTabProps) 
         <textarea
           value={description}
           onChange={e => setDescription(e.target.value)}
-          placeholder="What does this agent do? This is used by the orchestrator to personalize responses and the welcome message."
+          placeholder="What does this agent do? Used by the orchestrator for routing and welcome messages."
           rows={4}
-          style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+          style={{ ...inputStyle, resize: 'vertical' }}
         />
-        <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11, color: '#9B9B9B', marginTop: 5, lineHeight: 1.5 }}>
           Used by the orchestrator for context-aware routing and welcome messages.
         </div>
       </div>
 
-      {/* Save button */}
+      {/* REST Endpoint */}
+      <div>
+        <div style={labelStyle}>REST Endpoint</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1, padding: '9px 12px', borderRadius: 8, background: '#F7F7F8', border: '1px solid #E5E5E5', fontSize: 11, fontFamily: 'monospace', color: '#6B6B6B', wordBreak: 'break-all', lineHeight: 1.5 }}>
+            POST {endpoint}
+          </div>
+          <button onClick={copyEndpoint} title={copied ? 'Copied!' : 'Copy endpoint'}
+            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E5E5E5', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.1s', color: copied ? '#16A34A' : '#6B6B6B' }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#F7F7F8'; e.currentTarget.style.borderColor = '#0D0D0D' }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#E5E5E5' }}>
+            {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+          </button>
+          <a href={`/api/agents/${agentId}`} target="_blank" rel="noopener noreferrer"
+            title="View agent JSON"
+            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E5E5E5', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, textDecoration: 'none', color: '#6B6B6B', transition: 'all 0.1s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F7F7F8'; (e.currentTarget as HTMLElement).style.borderColor = '#0D0D0D' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff'; (e.currentTarget as HTMLElement).style.borderColor = '#E5E5E5' }}>
+            <ExternalLink size={14} />
+          </a>
+        </div>
+      </div>
+
+      {/* Save button — at bottom */}
       <button
         onClick={save}
         disabled={saving || !name.trim()}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          padding: '8px 14px', borderRadius: 8, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-          background: saveStatus === 'saved' ? 'rgba(34,197,94,0.15)' : saveStatus === 'error' ? 'rgba(232,85,85,0.15)' : 'var(--blue)',
-          color: saveStatus === 'saved' ? 'var(--green)' : saveStatus === 'error' ? '#e85555' : '#fff',
-          fontSize: 12, fontWeight: 600, opacity: saving ? 0.6 : 1,
-          transition: 'all 0.15s',
+          padding: '10px 0', borderRadius: 8, border: 'none',
+          cursor: (saving || !name.trim()) ? 'not-allowed' : 'pointer',
+          background: saveStatus === 'saved' ? '#16A34A' : saveStatus === 'error' ? '#DC2626' : '#000',
+          color: '#fff',
+          fontSize: 13, fontWeight: 600,
+          opacity: (saving || !name.trim()) ? 0.5 : 1,
+          transition: 'all 0.15s', marginTop: 4,
         }}
+        onMouseEnter={e => { if (!saving && name.trim() && saveStatus === 'idle') e.currentTarget.style.background = '#1A1A1A' }}
+        onMouseLeave={e => { if (saveStatus === 'idle') e.currentTarget.style.background = '#000' }}
       >
-        {saveStatus === 'saved' ? <CheckCircle size={12} /> : <Save size={12} />}
-        {saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Save failed' : saving ? 'Saving…' : 'Save'}
+        {saveStatus === 'saved' ? <CheckCircle size={13} /> : <Save size={13} />}
+        {saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Save failed' : saving ? 'Saving...' : 'Save'}
       </button>
 
-      {/* ID */}
-      <div style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text3)', padding: '6px 10px', borderRadius: 6, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
-        ID: {agentId}
-      </div>
-
-      {/* Endpoint */}
-      {agentId && (
-        <div>
-          <div style={labelStyle}>REST Endpoint</div>
-          <div style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)', fontSize: 10, fontFamily: 'monospace', color: 'var(--text2)', lineHeight: 1.6, wordBreak: 'break-all' }}>
-            POST {endpoint}
-          </div>
-          <button
-            onClick={copyEndpoint}
-            style={{
-              marginTop: 6, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              padding: '7px 12px', borderRadius: 7,
-              border: '1px solid var(--border)', background: 'var(--surface2)',
-              fontSize: 11, color: copied ? 'var(--green)' : 'var(--blue)', cursor: 'pointer', fontWeight: 600,
-            }}
-          >
-            {copied ? <CheckCircle size={11} /> : <Copy size={11} />}
-            {copied ? 'Copied!' : 'Copy endpoint'}
-          </button>
-        </div>
-      )}
-
-      {/* Nav links */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <Link href="/agents" style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 12px', borderRadius: 8,
-          border: '1px solid var(--border)', background: 'var(--surface2)',
-          fontSize: 11, color: 'var(--text2)', textDecoration: 'none', fontWeight: 500,
-        }}>
-          <ArrowLeft size={11} /> All agents
-        </Link>
-        <a
-          href={`/api/agents/${agentId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 12px', borderRadius: 8,
-            border: '1px solid var(--border)', background: 'var(--surface2)',
-            fontSize: 11, color: 'var(--text2)', textDecoration: 'none', fontWeight: 500,
-          }}
-        >
-          <ExternalLink size={11} /> View agent JSON
-        </a>
-      </div>
     </div>
   )
 }

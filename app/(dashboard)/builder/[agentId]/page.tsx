@@ -1,11 +1,12 @@
 'use client'
 import { useState, useEffect, useCallback, use, useRef } from 'react'
 import dynamic from 'next/dynamic'
-import { Save, Play, Copy, CheckCircle, Loader2, ChevronLeft, ChevronRight, ChevronDown, UserCheck, HelpCircle, Send, X, Download, Upload, Bot, Trash2 } from 'lucide-react'
+import { Save, Play, Copy, CheckCircle, Loader2, ChevronLeft, ChevronRight, ChevronDown, UserCheck, HelpCircle, Send, X, Download, Upload, Bot, Trash2, SlidersHorizontal, ArrowUpDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import TracePanel from '@/components/canvas/TracePanel'
-import ConfigStudio from '@/components/config/ConfigStudio'
+import AgentInfoTab from '@/components/config/tabs/AgentInfoTab'
+import OrchestratorTab from '@/components/config/tabs/OrchestratorTab'
 import { AgentNode, AgentEdge, TraceEvent } from '@/types/agent'
 import ThemeToggle from '@/components/ui/ThemeToggle'
 import Link from 'next/link'
@@ -36,7 +37,8 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'completed' | 'failed' | 'waiting_hitl' | 'waiting_clarify'>('idle')
   const [trace, setTrace] = useState<TraceEvent[]>([])
   const [copied, setCopied] = useState(false)
-  const [studioOpen, setStudioOpen] = useState(true)
+  const [configOpen, setConfigOpen] = useState(false)
+  const [configTab, setConfigTab] = useState<'agent' | 'orchestrator'>('agent')
   const [pendingAction, setPendingAction] = useState<{ type: 'hitl' | 'clarify'; runId: string } | null>(null)
   const [actionResuming, setActionResuming] = useState(false)
   const [resultDismissed, setResultDismissed] = useState(false)
@@ -45,6 +47,8 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
   const chatEndRef = useRef<HTMLDivElement>(null)
   const schemaRef = useRef(schema)
   const [importOpen, setImportOpen] = useState(false)
+  const [imExOpen, setImExOpen] = useState(false)
+  const imExJustClosed = useRef(false)
   const [importJson, setImportJson] = useState('')
   const [importError, setImportError] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
@@ -527,19 +531,22 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
       <style>{`@keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: 0 } }`}</style>
       {/* Top bar */}
-      <div className="flex items-center gap-3 px-4 flex-shrink-0 border-b"
-        style={{ background: 'var(--surface)', borderColor: 'var(--border)', height: 52 }}>
+      <div className="flex items-center gap-2 flex-shrink-0 border-b w-full"
+        style={{ background: 'var(--bg)', borderColor: 'var(--border)', height: 48, boxSizing: 'border-box', padding: '0 16px 0 12px' }}>
         {/* Back */}
         <Link href="/agents"
-          className="flex items-center justify-center rounded-lg border"
-          style={{ color: 'var(--text3)', borderColor: 'var(--border)', background: 'var(--surface2)', width: 32, height: 32, marginLeft: 10 }}>
-          <ChevronLeft size={14} />
+          className="flex items-center justify-center rounded-lg"
+          style={{ color: 'var(--text3)', width: 30, height: 30, transition: 'background 0.12s, color 0.12s', flexShrink: 0 }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface2)'; (e.currentTarget as HTMLElement).style.color = 'var(--text)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text3)' }}
+        >
+          <ChevronLeft size={15} />
         </Link>
 
-        <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+        <div style={{ width: 1, height: 18, background: 'var(--border)', flexShrink: 0 }} />
 
         {/* Agent name */}
         <input
@@ -547,54 +554,112 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
           onChange={e => setAgentName(e.target.value)}
           onBlur={saveAgent}
           style={{
-            fontSize: 14, fontWeight: 600, background: 'transparent', outline: 'none',
-            border: 'none', color: 'var(--text)', maxWidth: 240,
+            fontSize: 13, fontWeight: 600, background: 'transparent', outline: 'none',
+            border: 'none', color: 'var(--text)', maxWidth: 220, minWidth: 60,
           }}
         />
+
+        {/* Configure agent button */}
+        <div style={{ position: 'relative' }}
+          onMouseEnter={e => { const t = e.currentTarget.querySelector('.tb-tip') as HTMLElement; if (t) t.style.opacity = '1' }}
+          onMouseLeave={e => { const t = e.currentTarget.querySelector('.tb-tip') as HTMLElement; if (t) t.style.opacity = '0' }}>
+        <button
+          onClick={() => { setConfigOpen(true); setConfigTab('agent') }}
+          style={{
+            width: 26, height: 26, borderRadius: 6, border: 'none',
+            background: configOpen ? 'var(--surface2)' : 'transparent',
+            color: configOpen ? 'var(--accent)' : 'var(--text4)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.12s', flexShrink: 0,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.color = 'var(--accent)' }}
+          onMouseLeave={e => { if (!configOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text4)' } }}
+        >
+          <SlidersHorizontal size={12} />
+        </button>
+        <div className="tb-tip" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#0D0D0D', color: '#fff', fontSize: 11, fontWeight: 600, padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0, transition: 'opacity 0.08s', zIndex: 999 }}>Configure agent</div>
+        </div>
+
+        {/* API Usage — left side near name */}
         {savedAgentId && (
-          <span className="font-mono hidden sm:flex items-center gap-1.5"
-            style={{ fontSize: 10, padding: '2px 6px 2px 8px', borderRadius: 6, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text3)' }}>
-            {savedAgentId.slice(0, 8)}
-            <button onClick={copyEndpoint} title="Copy agent ID"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied ? 'var(--green)' : 'var(--text3)', padding: 0, display: 'flex', alignItems: 'center' }}>
-              {copied ? <CheckCircle size={10} /> : <Copy size={10} />}
+          <div style={{ position: 'relative' }}
+            onMouseEnter={e => { const t = e.currentTarget.querySelector('.tb-tip') as HTMLElement; if (t) t.style.opacity = '1' }}
+            onMouseLeave={e => { const t = e.currentTarget.querySelector('.tb-tip') as HTMLElement; if (t) t.style.opacity = '0' }}>
+            <button onClick={() => setCurlOpen(o => !o)}
+              style={{ width: 30, height: 30, borderRadius: 7, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.1s, color 0.1s',
+                background: curlOpen ? 'var(--surface2)' : 'transparent',
+                color: curlOpen ? 'var(--text)' : 'var(--text3)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.color = 'var(--text)' }}
+              onMouseLeave={e => { if (!curlOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text3)' } }}>
+              <HelpCircle size={14} />
             </button>
-          </span>
+            <div className="tb-tip" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#0D0D0D', color: '#fff', fontSize: 11, fontWeight: 600, padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0, transition: 'opacity 0.08s', zIndex: 999 }}>API Usage</div>
+          </div>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          {saveStatus === 'saved' && <span style={{ fontSize: 11, color: 'var(--green)' }}>Saved ✓</span>}
-          {saveStatus === 'error' && <span style={{ fontSize: 11, color: 'var(--red)' }}>Save failed</span>}
-          {savedAgentId && (
-            <button onClick={() => setCurlOpen(true)}
-              className="hidden sm:flex items-center gap-1.5"
-              title="View curl examples for this agent"
-              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text2)', background: 'var(--surface2)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>
-              <HelpCircle size={11} />
-              API Usage
+        {/* Import / Export dropdown — left side near name */}
+          <div style={{ position: 'relative' }}
+            onMouseEnter={e => { if (!imExOpen && !imExJustClosed.current) { const t = e.currentTarget.querySelector('.tb-tip') as HTMLElement; if (t) t.style.opacity = '1' } }}
+            onMouseLeave={e => { const t = e.currentTarget.querySelector('.tb-tip') as HTMLElement; if (t) t.style.opacity = '0' }}>
+            <button onClick={() => setImExOpen(o => !o)}
+              style={{ width: 30, height: 30, borderRadius: 7, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.1s, color 0.1s',
+                background: imExOpen ? 'var(--surface2)' : 'transparent',
+                color: imExOpen ? 'var(--text)' : 'var(--text3)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.color = 'var(--text)' }}
+              onMouseLeave={e => { if (!imExOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text3)' } }}>
+              <ArrowUpDown size={14} />
             </button>
-          )}
-          <button onClick={() => setExportOpen(true)}
-            className="hidden sm:flex items-center gap-1.5"
-            title="Export agent schema as JSON"
-            style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text2)', background: 'var(--surface2)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>
-            <Download size={11} />
-            Export
-          </button>
-          <button onClick={() => setImportOpen(true)}
-            className="hidden sm:flex items-center gap-1.5"
-            title="Import agent schema from JSON"
-            style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text2)', background: 'var(--surface2)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>
-            <Upload size={11} />
-            Import
-          </button>
+            <div className="tb-tip" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#0D0D0D', color: '#fff', fontSize: 11, fontWeight: 600, padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap', pointerEvents: 'none', opacity: imExOpen ? 0 : 0, transition: 'opacity 0.08s', zIndex: 999, display: imExOpen ? 'none' : undefined }}>Import / Export</div>
+            {imExOpen && (
+              <div style={{ position: 'fixed', inset: 0, zIndex: 299 }} onClick={() => { imExJustClosed.current = true; setImExOpen(false); setTimeout(() => { imExJustClosed.current = false }, 200) }} />
+            )}
+            {imExOpen && (
+              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 300, background: '#fff', border: '1px solid #E5E5E5', borderRadius: 10, padding: '4px', minWidth: 168, boxShadow: '0 8px 24px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.06)' }}>
+                <button onClick={() => { setExportOpen(true); setImExOpen(false) }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 7, border: 'none', background: 'transparent', color: '#0D0D0D', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F7F7F8'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, background: '#F7F7F8', border: '1px solid #E5E5E5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Download size={13} color="#6B6B6B" />
+                  </div>
+                  Export schema
+                </button>
+                <button onClick={() => { setImportOpen(true); setImExOpen(false) }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 7, border: 'none', background: 'transparent', color: '#0D0D0D', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F7F7F8'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, background: '#F7F7F8', border: '1px solid #E5E5E5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Upload size={13} color="#6B6B6B" />
+                  </div>
+                  Import schema
+                </button>
+              </div>
+            )}
+          </div>
+
+        {/* Spacer — pushes Saved+Save to extreme right */}
+        <div style={{ flex: 1 }} />
+
+        {/* Saved status + Save at extreme right */}
+        <div className="flex items-center gap-1">
+          {saveStatus === 'saved' && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--success)', marginRight: 2 }}>Saved ✓</span>}
+          {saveStatus === 'error' && <span style={{ fontSize: 11, color: 'var(--error)', marginRight: 2 }}>Failed</span>}
+
           <button onClick={saveAgent} disabled={saving}
-            className="flex items-center gap-1.5"
-            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text2)', background: 'var(--surface2)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            style={{
+              padding: '6px 14px', borderRadius: 8,
+              border: 'none',
+              color: saving ? 'var(--text4)' : 'var(--text2)',
+              background: 'var(--surface)',
+              fontSize: 12, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: 5,
+              transition: 'background 0.12s', flexShrink: 0,
+            }}
+            onMouseEnter={e => { if (!saving) { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.color = 'var(--text)' } }}
+            onMouseLeave={e => { if (!saving) { e.currentTarget.style.background = 'var(--surface)'; e.currentTarget.style.color = 'var(--text2)' } }}>
             {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
             Save
           </button>
-          <ThemeToggle />
         </div>
       </div>
 
@@ -605,40 +670,9 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
           {/* Studio + Canvas row — toggle lives here so top:50% = canvas center only */}
           <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
 
-            {/* Config Studio — icon strip always visible, content panel collapses */}
-            <div style={{
-              width: studioOpen ? 300 : 56, flexShrink: 0,
-              overflow: 'hidden',
-              transition: 'width 0.2s ease', zIndex: 10,
-              position: 'relative',
-            }}>
-              <ConfigStudio
-                currentAgentId={savedAgentId ?? undefined}
-                currentAgentName={agentName}
-              />
-            </div>
-
-            {/* Left seam toggle — top:50% of canvas row, never affected by chat height */}
-            <button
-              onClick={() => setStudioOpen(o => !o)}
-              title={studioOpen ? 'Collapse panel' : 'Expand panel'}
-              style={{
-                position: 'absolute',
-                left: (studioOpen ? 300 : 56) - 12,
-                top: '50%', transform: 'translateY(-50%)',
-                width: 24, height: 24, borderRadius: 6,
-                border: '1px solid var(--border)', background: 'var(--surface)',
-                color: 'var(--text3)', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-                zIndex: 30,
-                transition: 'left 0.2s ease',
-              }}
-            >
-              {studioOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-            </button>
 
           <div className="flex-1 relative overflow-hidden" style={{ minHeight: 0 }}>
+
             {schemaReady && (
               <AgentCanvas
                 key={`${savedAgentId ?? 'new'}-${canvasKey}`}
@@ -841,26 +875,93 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
         </div>
       </div>
 
+      {/* ── Configure Agent Modal ─────────────────────────────────── */}
+      {configOpen && savedAgentId && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => setConfigOpen(false)}>
+          <div style={{
+            width: '100%', maxWidth: 500,
+            background: '#fff', borderRadius: 20, border: '1px solid #E5E5E5',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.06)',
+            overflow: 'hidden', maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+          }}
+            onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px 0', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: '#F7F7F8', border: '1px solid #E5E5E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <SlidersHorizontal size={13} color="#6B6B6B" />
+                </div>
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#0D0D0D', letterSpacing: '-0.01em' }}>Configure Agent</span>
+              </div>
+              <button onClick={() => setConfigOpen(false)}
+                style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: '#9B9B9B', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.1s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#F7F7F8'; e.currentTarget.style.color = '#0D0D0D' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9B9B9B' }}>
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Tab strip */}
+            <div style={{ display: 'flex', padding: '12px 24px 0', gap: 4, flexShrink: 0 }}>
+              {([
+                { id: 'agent', label: 'Agent Info' },
+                { id: 'orchestrator', label: 'Orchestrator' },
+              ] as const).map(({ id, label }) => (
+                <button key={id} onClick={() => setConfigTab(id)}
+                  style={{
+                    padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                    fontSize: 13, fontWeight: 600, transition: 'all 0.12s',
+                    background: configTab === id ? '#0D0D0D' : 'transparent',
+                    color: configTab === id ? '#fff' : '#9B9B9B',
+                  }}
+                  onMouseEnter={e => { if (configTab !== id) { e.currentTarget.style.background = '#F7F7F8'; e.currentTarget.style.color = '#0D0D0D' } }}
+                  onMouseLeave={e => { if (configTab !== id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9B9B9B' } }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ height: 1, background: '#E5E5E5', margin: '12px 0 0', flexShrink: 0 }} />
+
+            {/* Content */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {configTab === 'agent' && <AgentInfoTab agentId={savedAgentId} agentName={agentName} />}
+              {configTab === 'orchestrator' && <OrchestratorTab agentId={savedAgentId} />}
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* Export JSON Modal */}
       {exportOpen && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 200,
-          background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
         }} onClick={() => setExportOpen(false)}>
           <div style={{
-            width: 560, borderRadius: 16,
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            width: '100%', maxWidth: 560, borderRadius: 20,
+            background: '#fff', border: '1px solid #E5E5E5',
+            padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.06)',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Export Agent Schema</span>
-              <button onClick={() => setExportOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)' }}>
-                <X size={16} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: '#F7F7F8', border: '1px solid #E5E5E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Download size={13} color="#6B6B6B" />
+                </div>
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#0D0D0D', letterSpacing: '-0.01em' }}>Export Schema</span>
+              </div>
+              <button onClick={() => setExportOpen(false)} style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: '#9B9B9B', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#F7F7F8'; e.currentTarget.style.color = '#0D0D0D' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9B9B9B' }}>
+                <X size={14} />
               </button>
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>
-              Copy this JSON to share your agent, back it up, or import it into another AgentHub account.
+            <p style={{ fontSize: 13, color: '#6B6B6B', marginBottom: 14, lineHeight: 1.5 }}>
+              Copy this JSON to share your agent, back it up, or import into another account.
             </p>
             <textarea
               readOnly
@@ -869,15 +970,15 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
               style={{
                 width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 11,
                 fontFamily: 'monospace', lineHeight: 1.6, resize: 'vertical',
-                background: 'var(--bg)', border: '1px solid var(--border)',
-                color: 'var(--text)', outline: 'none', cursor: 'text',
+                background: '#fff', border: '1px solid #E5E5E5',
+                color: '#0D0D0D', outline: 'none', cursor: 'text',
               }}
               onFocus={e => e.target.select()}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button onClick={() => setExportOpen(false)} style={{
                 padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)',
-                background: 'var(--surface2)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+                background: '#F7F7F8', color: '#6B6B6B', fontSize: 13, fontWeight: 500, cursor: 'pointer',
               }}>Close</button>
               <button onClick={() => {
                 const json = JSON.stringify({ name: agentName, schema: { nodes: schema.nodes, edges: schema.edges } }, null, 2)
@@ -888,7 +989,7 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
                 a.click(); URL.revokeObjectURL(url)
               }} style={{
                 padding: '8px 20px', borderRadius: 8, border: 'none',
-                background: 'var(--blue)', color: '#fff',
+                background: '#000', color: '#fff',
                 fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
               }}>
                 <Download size={13} /> Download .json
@@ -914,16 +1015,22 @@ export default function BuilderPage({ params }: { params: Promise<{ agentId: str
         const runUrl = `${base}/api/agents/${savedAgentId}/run`
         const key = apiKey || 'YOUR_API_KEY'
         const msg = testMessage || 'Hello!'
+        const startNode = schema.nodes.find(n => (n.data as Record<string,unknown>)?.nodeType === 'input')
+        const apiField = ((startNode?.data as Record<string,unknown>)?.inputField as string) || 'message'
+        const body = (f: string) => JSON.stringify({ [f]: msg })
 
         const snippets: Record<'curl' | 'python' | 'javascript', { title: string; description: string; code: string }[]> = {
           curl: [
             {
               title: 'Basic run',
-              description: 'Send a message and get the output.',
+              description: 'Send a message and get the output. Add callbackUrl to receive the result via webhook instead of waiting.',
               code: `curl -s -X POST "${runUrl}" \\
   -H "Content-Type: application/json" \\
   -H "X-AgentHub-Key: ${key}" \\
-  -d '{"message": ${JSON.stringify(msg)}}'`,
+  -d '{"message": ${JSON.stringify(msg)}}'
+
+# With webhook callback (recommended for HITL pipelines):
+# -d '{"message": ${JSON.stringify(msg)}, "callbackUrl": "https://your-server.com/webhook"}'`,
             },
             {
               title: 'Clarify flow',
@@ -943,29 +1050,79 @@ curl -s -X POST "${base}/api/runs/$RUN_ID/clarify" \\
             },
             {
               title: 'HITL flow',
-              description: 'Agent pauses with status "waiting_hitl" for human approval. Approve or reject to continue.',
+              description: 'Agent pauses with status "waiting_hitl". A reviewer approves from the AgentHub Runs page or via API. Approve, request revision, or reject.',
               code: `# Step 1 — start the run
 RESPONSE=$(curl -s -X POST "${runUrl}" \\
   -H "Content-Type: application/json" \\
   -H "X-AgentHub-Key: ${key}" \\
   -d '{"message": ${JSON.stringify(msg)}}')
 RUN_ID=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['runId'])")
+STATUS=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
 
-# Step 2 — approve (set approved: false to reject)
+# If waiting_hitl — reviewer approves from the Runs page (dashboard), or via API:
+
+# Approve:
 curl -s -X POST "${base}/api/runs/$RUN_ID/resume" \\
   -H "Content-Type: application/json" \\
   -H "X-AgentHub-Key: ${key}" \\
-  -d '{"approved": true, "feedback": "Looks good."}'`,
+  -d '{"approved": true, "feedback": "Looks good."}'
+
+# Request revision (re-runs preceding node with feedback):
+# curl ... -d '{"approved": false, "action": "revise", "feedback": "Too formal"}'
+
+# Reject (marks run failed, pipeline stops):
+# curl ... -d '{"approved": false, "feedback": "Do not send"}'`,
+            },
+            {
+              title: 'HITL + webhook (async, recommended)',
+              description: 'Pass callbackUrl + webhookSecret — AgentHub signs every webhook POST so your server can verify it really came from AgentHub.',
+              code: `# Start run with signed webhook callback
+curl -s -X POST "${runUrl}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-AgentHub-Key: ${key}" \\
+  -d '{
+    "message": ${JSON.stringify(msg)},
+    "callbackUrl": "https://your-server.com/webhook",
+    "webhookSecret": "your_secret_abc123"
+  }'
+
+# AgentHub POSTs to your webhook with these headers:
+#   X-AgentHub-Timestamp: 1716000000
+#   X-AgentHub-Signature: sha256=<hmac>
+#   Content-Type: application/json
+# Body: { "runId": "...", "status": "completed", "output": "...", "tokens": 123 }
+
+# Verify on your server (Node.js):
+# const crypto = require("crypto")
+# const expected = "sha256=" + crypto.createHmac("sha256", "your_secret_abc123")
+#   .update(timestamp + "." + rawBody).digest("hex")
+# if (expected !== req.headers["x-agenthub-signature"]) return res.status(401).end()`,
             },
             {
               title: 'Interactive chat loop (save as chat.sh)',
-              description: 'Terminal chat session — handles Clarify and HITL pauses automatically.',
+              description: 'Terminal chat session for local testing — handles Clarify and HITL pauses. Note: HITL inline approval is for local dev only; in production reviewers use the AgentHub Runs page.',
               code: `#!/usr/bin/env bash
 BASE_URL="${base}"
 AGENT_ID="${savedAgentId}"
 API_KEY="${key}"
+LOOP_MODE=false   # true = keep looping after each run · false = exit when run completes
 
-echo ""; echo "  AgentHub Chat — ${agentName}"; echo "  Type 'exit' to quit."; echo ""
+echo ""; echo "  AgentHub Chat — ${agentName}"; echo ""
+
+# Fetch welcome message
+_welcome() {
+  python3 - "$(curl -s "$BASE_URL/api/agents/$AGENT_ID/welcome" -H "X-AgentHub-Key: $API_KEY")" <<'PYEOF'
+import sys, json
+try:
+  d = json.loads(sys.argv[1])
+  w = d.get('welcome', '')
+  if w: print(w)
+except Exception: pass
+PYEOF
+}
+HISTORY="[]"
+WELCOME=$(_welcome)
+[ -n "$WELCOME" ] && printf "\\033[1;35mAgent:\\033[0m\\n%s\\n\\n" "$WELCOME"
 
 _j() { python3 - "$1" "$2" <<'PYEOF'
 import sys, json
@@ -1027,12 +1184,18 @@ PYEOF
 
 while true; do
   printf "\\033[1;36mYou:\\033[0m "; read -r MSG
-  [ "$MSG" = "exit" ] || [ "$MSG" = "quit" ] && echo "Bye." && break
+  [ "$MSG" = "exit" ] || [ "$MSG" = "quit" ] && break
   [ -z "$MSG" ] && continue
+  if [ "$LOOP_MODE" = "true" ] && [ "$MSG" = "restart" ]; then
+    HISTORY="[]"; printf "\\n  ↩ Starting fresh...\\n\\n"
+    WELCOME=$(_welcome); [ -n "$WELCOME" ] && printf "\\033[1;35mAgent:\\033[0m\\n%s\\n\\n" "$WELCOME"
+    continue
+  fi
+  BODY=$(python3 -c "import json,sys; h=json.loads(sys.argv[1]); d={'message':sys.argv[2]}; d.update({'conversationHistory':h} if h else {}); print(json.dumps(d))" "$HISTORY" "$MSG")
   printf "\\033[2m  thinking...\\033[0m\\r"
   RAW=$(curl -s -X POST "$BASE_URL/api/agents/$AGENT_ID/run" \\
     -H "Content-Type: application/json" -H "X-AgentHub-Key: $API_KEY" \\
-    -d "{\\"message\\": \\"$MSG\\"}")
+    -d "$BODY")
   printf "                 \\r"
   STATUS=$(_j "$RAW" status); RUN_ID=$(_j "$RAW" runId)
 
@@ -1050,37 +1213,65 @@ while true; do
   done
 
   while [ "$STATUS" = "waiting_hitl" ]; do
-    printf "\\n  \\033[1;33m[HITL]\\033[0m Human review required.\\n"
     PREVIEW=$(_hitl_partial "$RAW")
-    [ -n "$PREVIEW" ] && printf "  Preview: %s\\n" "$PREVIEW"
-    printf "  Approve? [y/n]: "; read -r CHOICE
-    APPROVED="true"; [ "$CHOICE" != "y" ] && APPROVED="false"
-    printf "  Feedback (optional, Enter to skip): "; read -r FB
-    printf "\\033[2m  resuming...\\033[0m\\r"
-    RAW=$(curl -s -X POST "$BASE_URL/api/runs/$RUN_ID/resume" \\
-      -H "Content-Type: application/json" -H "X-AgentHub-Key: $API_KEY" \\
-      -d "{\\"approved\\": $APPROVED, \\"feedback\\": \\"$FB\\"}")
-    printf "                 \\r"
-    STATUS=$(_j "$RAW" status); RUN_ID=$(_j "$RAW" runId)
+    printf "\\n  \\033[1;33m╔══ HITL: Human review required ══╗\\033[0m\\n"
+    [ -n "$PREVIEW" ] && printf "  Content: %s\\n" "$PREVIEW"
+    REVIEW_URL=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d.get('hitlUrls',{}).get('reviewUrl',''))" "$RAW" 2>/dev/null)
+    if [ -n "$REVIEW_URL" ]; then
+      printf "  \\033[2m→ Review directly: %s\\033[0m\\n" "$REVIEW_URL"
+    else
+      printf "  \\033[2m→ Go to your AgentHub Runs page and approve run: %s\\033[0m\\n" "$RUN_ID"
+    fi
+    printf "  \\033[2m→ Then come back and type 'done' to continue.\\033[0m\\n\\n"
+    while true; do
+      printf "\\033[1;36mYou:\\033[0m "; read -r HITL_INPUT
+      [ "$HITL_INPUT" = "exit" ] || [ "$HITL_INPUT" = "quit" ] && echo "Bye." && exit 0
+      if [ "$HITL_INPUT" = "done" ] || [ "$HITL_INPUT" = "ok" ] || [ "$HITL_INPUT" = "approved" ]; then
+        printf "\\033[2m  checking...\\033[0m\\r"
+        RAW=$(curl -s "$BASE_URL/api/runs/$RUN_ID" -H "X-AgentHub-Key: $API_KEY")
+        printf "                 \\r"
+        STATUS=$(_j "$RAW" status)
+        [ "$STATUS" != "waiting_hitl" ] && break
+        printf "  \\033[1;33mStill pending — not approved yet. Approve it on the Runs page first.\\033[0m\\n"
+      else
+        printf "  \\033[2mPlease approve the pending review on the AgentHub Runs page first, then type 'done'.\\033[0m\\n"
+      fi
+    done
   done
 
   OUTPUT=$(_j "$RAW" output); ERR=$(_j "$RAW" error)
-  if [ -n "$OUTPUT" ]; then printf "\\033[1;35mAgent:\\033[0m\\n%s\\n\\n" "$OUTPUT"
-  elif [ -n "$ERR" ]; then printf "\\033[1;31mError:\\033[0m %s\\n\\n" "$ERR"
-  else printf "\\033[2mAgent: [status=%s — no output]\\033[0m\\n\\n" "$STATUS"; fi
+  if [ -n "$OUTPUT" ]; then
+    printf "\\033[1;35mAgent:\\033[0m\\n%s\\n\\n" "$OUTPUT"
+    [ "$LOOP_MODE" = "true" ] && HISTORY=$(python3 -c "
+import json,sys
+h=json.loads(sys.argv[1]); u=sys.argv[2]; a=sys.argv[3]
+h.append({'role':'user','content':u}); h.append({'role':'assistant','content':a})
+print(json.dumps(h[-20:]))
+" "$HISTORY" "$MSG" "$OUTPUT")
+    [ "$LOOP_MODE" != "true" ] && break
+  elif [ -n "$ERR" ]; then
+    printf "\\033[1;31mError:\\033[0m %s\\n\\n" "$ERR"
+    break
+  else
+    printf "\\033[2mAgent: [status=%s — no output]\\033[0m\\n\\n" "$STATUS"
+    [ "$LOOP_MODE" != "true" ] && break
+  fi
 done`,
             },
           ],
           python: [
             {
               title: 'Basic run',
-              description: 'Send a message and get the output. pip install requests',
+              description: 'Send a message and get the output. Add callbackUrl to receive the result via webhook. pip install requests',
               code: `import requests
 
 response = requests.post(
     "${runUrl}",
     headers={"X-AgentHub-Key": "${key}"},
-    json={"message": ${JSON.stringify(msg)}}
+    json={
+        "message": ${JSON.stringify(msg)},
+        # "callbackUrl": "https://your-server.com/webhook",  # optional
+    }
 )
 data = response.json()
 print(data["output"])`,
@@ -1110,46 +1301,81 @@ print(res["output"])`,
             },
             {
               title: 'HITL flow',
-              description: 'Handle agents that pause for human approval before continuing.',
+              description: 'Agent pauses for human approval. Reviewer approves from the Runs page or via API.',
               code: `import requests
 
 HEADERS = {"X-AgentHub-Key": "${key}"}
 
-# Step 1 — start the run
 res = requests.post("${runUrl}", headers=HEADERS,
     json={"message": ${JSON.stringify(msg)}}).json()
 
-# Step 2 — approve or reject HITL pauses
-while res.get("status") == "waiting_hitl":
-    partial = res["output"].get("partial", "")
-    if partial:
-        print(f"Content to review:\\n{partial}\\n")
-    approved = input("Approve? [y/n]: ").strip().lower() == "y"
-    feedback = input("Feedback (optional): ").strip() or None
-    res = requests.post(
-        f"${base}/api/runs/{res['runId']}/resume",
-        headers=HEADERS,
-        json={"approved": approved, "feedback": feedback}
-    ).json()
+if res.get("status") == "waiting_hitl":
+    print("Pending review. runId:", res["runId"])
+    print("Question:", res["output"].get("question"))
+    # Reviewer approves from AgentHub Runs page, or via API:
+    # requests.post(f"${base}/api/runs/{res['runId']}/resume",
+    #     headers=HEADERS, json={"approved": True, "feedback": "LGTM"})
+else:
+    print(res["output"])`,
+            },
+            {
+              title: 'HITL + webhook (async, recommended)',
+              description: 'Pass callbackUrl + webhookSecret — AgentHub signs every POST so your server can verify the request.',
+              code: `import requests, hmac, hashlib
 
-print(res["output"])`,
+WEBHOOK_SECRET = "your_secret_abc123"
+HEADERS = {"X-AgentHub-Key": "${key}"}
+
+res = requests.post("${runUrl}", headers=HEADERS,
+    json={
+        "message": ${JSON.stringify(msg)},
+        "callbackUrl": "https://your-server.com/webhook",
+        "webhookSecret": WEBHOOK_SECRET,
+    }
+).json()
+
+if res.get("status") == "waiting_hitl":
+    print("Pending review:", res["runId"])
+else:
+    print(res["output"])
+
+# Verify incoming webhook on your server (Flask example):
+# @app.post("/webhook")
+# def webhook():
+#     timestamp = request.headers.get("X-AgentHub-Timestamp", "")
+#     signature = request.headers.get("X-AgentHub-Signature", "")
+#     body = request.get_data(as_text=True)
+#     expected = "sha256=" + hmac.new(
+#         WEBHOOK_SECRET.encode(), f"{timestamp}.{body}".encode(), hashlib.sha256
+#     ).hexdigest()
+#     if not hmac.compare_digest(expected, signature):
+#         abort(401)
+#     data = request.json
+#     print("Final output:", data["output"])`,
             },
             {
               title: 'Chat loop (run + clarify + HITL)',
-              description: 'Interactive chat loop — handles clarify + HITL pauses, keeps conversation going. Save as chat.py',
-              code: `# chat.py — save and run with: python3 chat.py
-import requests
+              description: 'Full interactive chat — welcome message, conversation history, clarify + HITL handling, restart/exit at end. Save as chat.py',
+              code: `# chat.py — run with: python3 chat.py
+import requests, json, sys
 
-BASE_URL = "${base}"
-AGENT_ID = "${savedAgentId}"
-API_KEY  = "${key}"
-HEADERS  = {"X-AgentHub-Key": API_KEY}
+BASE_URL  = "${base}"
+AGENT_ID  = "${savedAgentId}"
+API_KEY   = "${key}"
+LOOP_MODE = False   # True = keep looping after each run · False = exit when run completes
+HEADERS   = {"X-AgentHub-Key": API_KEY}
 
-def send(message):
-    res = requests.post(
-        f"{BASE_URL}/api/agents/{AGENT_ID}/run",
-        headers=HEADERS, json={"message": message}
-    ).json()
+def get_welcome():
+    try:
+        return requests.get(f"{BASE_URL}/api/agents/{AGENT_ID}/welcome", headers=HEADERS).json().get("welcome", "")
+    except:
+        return ""
+
+def send(message, history=None):
+    payload = {"message": message}
+    if history:
+        payload["conversationHistory"] = history
+    res = requests.post(f"{BASE_URL}/api/agents/{AGENT_ID}/run", headers=HEADERS, json=payload).json()
 
     while res.get("status") in ("waiting_clarify", "waiting_hitl"):
         run_id = res["runId"]
@@ -1160,42 +1386,74 @@ def send(message):
                 headers=HEADERS, json={"answer": answer}).json()
         else:
             partial = res.get("output", {}).get("partial", "")
-            if partial:
-                print(f"\\nReview:\\n{partial}\\n")
-            approved = input("Approve? [y/n]: ").lower() == "y"
-            feedback = input("Feedback (optional): ").strip() or None
-            res = requests.post(f"{BASE_URL}/api/runs/{run_id}/resume",
-                headers=HEADERS, json={"approved": approved, "feedback": feedback}).json()
+            if partial: print(f"\\nContent to review:\\n{partial}\\n")
+            print(f"\\n╔══ HITL: Human review required ══╗")
+            review_url = res.get("hitlUrls", {}).get("reviewUrl")
+            if review_url:
+                print(f"→ Review directly: {review_url}")
+            else:
+                print(f"→ Approve run {run_id} on the AgentHub Runs page")
+            print(f"→ Then type 'done' here to continue.\\n")
+            while True:
+                u = input("You: ").strip().lower()
+                if u in ("exit", "quit"): print("Bye."); sys.exit(0)
+                if u in ("done", "ok", "approved"):
+                    check = requests.get(f"{BASE_URL}/api/runs/{run_id}", headers=HEADERS).json()
+                    if check.get("status") != "waiting_hitl": res = check; break
+                    print("Still pending — approve on the Runs page first.")
+                else:
+                    print("Approve the review first, then type 'done'.")
 
     if res.get("status") == "failed":
         raise RuntimeError(res.get("error", "Agent failed"))
     return res.get("output", "")
 
-print(f"\\n  AgentHub Chat — type 'exit' to quit\\n")
+def start_session():
+    welcome = get_welcome()
+    if welcome:
+        print(f"\\nAgent: {welcome}\\n")
+    return []
+
+print(f"\\n  AgentHub Chat — ${agentName}\\n")
+history = start_session()
+
 while True:
     msg = input("You: ").strip()
-    if msg.lower() in ("exit", "quit"):
-        print("Bye."); break
-    if not msg:
+    if not msg: continue
+    if msg.lower() in ("exit", "quit"): break
+    if LOOP_MODE and msg.lower() == "restart":
+        print("\\n  ↩ Starting fresh...\\n")
+        history = start_session()
         continue
     try:
-        output = send(msg)
-        print(f"\\nAgent: {output}\\n")
+        output = send(msg, history or None)
+        out_str = output if isinstance(output, str) else json.dumps(output, indent=2)
+        print(f"\\nAgent: {out_str}\\n")
+        if LOOP_MODE:
+            history.append({"role": "user", "content": msg})
+            history.append({"role": "assistant", "content": out_str})
+            history = history[-20:]
+        else:
+            break
     except Exception as e:
-        print(f"\\nError: {e}\\n")`,
+        print(f"\\nError: {e}\\n")
+        break`,
             },
           ],
           javascript: [
             {
               title: 'Basic run',
-              description: 'Send a message and get the output. Works in Node.js and the browser.',
+              description: 'Send a message and get the output. Add callbackUrl to receive the result via webhook. Works in Node.js and the browser.',
               code: `const response = await fetch("${runUrl}", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
     "X-AgentHub-Key": "${key}",
   },
-  body: JSON.stringify({ message: ${JSON.stringify(msg)} }),
+  body: JSON.stringify({
+    message: ${JSON.stringify(msg)},
+    // callbackUrl: "https://your-server.com/webhook", // optional
+  }),
 });
 
 const data = await response.json();
@@ -1232,52 +1490,86 @@ console.log(output);`,
             },
             {
               title: 'HITL flow',
-              description: 'Handle agents that pause for human approval before continuing.',
-              code: `async function runWithHITL(message) {
-  const headers = {
-    "Content-Type": "application/json",
-    "X-AgentHub-Key": "${key}",
-  };
+              description: 'Agent pauses for human approval. Reviewer approves from the Runs page or via API.',
+              code: `const headers = {
+  "Content-Type": "application/json",
+  "X-AgentHub-Key": "${key}",
+};
 
-  let res = await fetch("${runUrl}", {
-    method: "POST", headers,
-    body: JSON.stringify({ message }),
-  }).then(r => r.json());
+const res = await fetch("${runUrl}", {
+  method: "POST", headers,
+  body: JSON.stringify({ message: ${JSON.stringify(msg)} }),
+}).then(r => r.json());
 
-  while (res.status === "waiting_hitl") {
-    const partial = res.output?.partial;
-    if (partial) console.log("Review:", partial);
+if (res.status === "waiting_hitl") {
+  console.log("Pending review. runId:", res.runId);
+  console.log("Question:", res.output?.question);
+  // Reviewer approves from AgentHub Runs page, or via API:
+  // await fetch(\`${base}/api/runs/\${res.runId}/resume\`,
+  //   { method: "POST", headers, body: JSON.stringify({ approved: true, feedback: "LGTM" }) })
+} else {
+  console.log(res.output);
+}`,
+            },
+            {
+              title: 'HITL + webhook (async, recommended)',
+              description: 'Pass callbackUrl + webhookSecret — AgentHub signs every POST so your server can verify the request.',
+              code: `const WEBHOOK_SECRET = "your_secret_abc123";
 
-    const approved = confirm("Approve this output?"); // replace with your UI
-    const feedback = approved ? prompt("Feedback (optional):") : "Rejected";
-    res = await fetch(\`${base}/api/runs/\${res.runId}/resume\`, {
-      method: "POST", headers,
-      body: JSON.stringify({ approved, feedback }),
-    }).then(r => r.json());
-  }
+const res = await fetch("${runUrl}", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-AgentHub-Key": "${key}" },
+  body: JSON.stringify({
+    message: ${JSON.stringify(msg)},
+    callbackUrl: "https://your-server.com/webhook",
+    webhookSecret: WEBHOOK_SECRET,
+  }),
+}).then(r => r.json());
 
-  return res.output;
+if (res.status === "waiting_hitl") {
+  console.log("Pending review:", res.runId);
+} else {
+  console.log(res.output);
 }
 
-const output = await runWithHITL(${JSON.stringify(msg)});
-console.log(output);`,
+// Verify incoming webhook on your server (Express example):
+// app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
+//   const timestamp = req.headers["x-agenthub-timestamp"];
+//   const signature = req.headers["x-agenthub-signature"];
+//   const rawBody   = req.body.toString();
+//   const expected  = "sha256=" + crypto.createHmac("sha256", WEBHOOK_SECRET)
+//     .update(timestamp + "." + rawBody).digest("hex");
+//   if (expected !== signature) return res.sendStatus(401);
+//   const data = JSON.parse(rawBody);
+//   console.log("Final output:", data.output);
+//   res.sendStatus(200);
+// });`,
             },
             {
               title: 'Chat loop (Node.js)',
-              description: 'Interactive chat loop — handles clarify + HITL pauses, keeps conversation going. Run with: node chat.mjs',
+              description: 'Full interactive chat — welcome message, conversation history, clarify + HITL handling, restart/exit. Run with: node chat.mjs',
               code: `// chat.mjs — run with: node chat.mjs
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
-const AGENT_ID = "${savedAgentId}";
-const API_KEY  = "${key}";
-const BASE_URL = "${base}";
-const HEADERS  = { "Content-Type": "application/json", "X-AgentHub-Key": API_KEY };
+const AGENT_ID   = "${savedAgentId}";
+const API_KEY    = "${key}";
+const BASE_URL   = "${base}";
+const LOOP_MODE  = false; // true = keep looping after each run · false = exit when run completes
+const HEADERS    = { "Content-Type": "application/json", "X-AgentHub-Key": API_KEY };
 const rl = readline.createInterface({ input: stdin, output: stdout });
 
-async function send(message) {
+async function getWelcome() {
+  try {
+    const r = await fetch(\`\${BASE_URL}/api/agents/\${AGENT_ID}/welcome\`, { headers: HEADERS });
+    return (await r.json()).welcome ?? "";
+  } catch { return ""; }
+}
+
+async function send(message, history = []) {
   let res = await fetch(\`\${BASE_URL}/api/agents/\${AGENT_ID}/run\`, {
-    method: "POST", headers: HEADERS, body: JSON.stringify({ message }),
+    method: "POST", headers: HEADERS,
+    body: JSON.stringify({ message, ...(history.length ? { conversationHistory: history } : {}) }),
   }).then(r => r.json());
 
   while (res.status === "waiting_clarify" || res.status === "waiting_hitl") {
@@ -1288,13 +1580,26 @@ async function send(message) {
         { method: "POST", headers: HEADERS, body: JSON.stringify({ answer }) }
       ).then(r => r.json());
     } else {
-      if (res.output?.partial) console.log("\\nReview:", res.output.partial, "\\n");
-      const choice = await rl.question("Approve? [y/n]: ");
-      const approved = choice.trim().toLowerCase() === "y";
-      const feedback = approved ? (await rl.question("Feedback (optional): ")) || undefined : undefined;
-      res = await fetch(\`\${BASE_URL}/api/runs/\${res.runId}/resume\`,
-        { method: "POST", headers: HEADERS, body: JSON.stringify({ approved, feedback }) }
-      ).then(r => r.json());
+      const partial = res.output?.partial;
+      if (partial) console.log("\\nContent to review:\\n", partial, "\\n");
+      console.log("\\n╔══ HITL: Human review required ══╗");
+      const reviewUrl = res.hitlUrls?.reviewUrl;
+      if (reviewUrl) console.log(\`→ Review directly: \${reviewUrl}\`);
+      else console.log(\`→ Approve run \${res.runId} on the AgentHub Runs page\`);
+      console.log("→ Then type 'done' here to continue.\\n");
+      const pendingId = res.runId;
+      let done = false;
+      while (!done) {
+        const inp = (await rl.question("You: ")).trim().toLowerCase();
+        if (inp === "exit" || inp === "quit") { console.log("Bye."); rl.close(); process.exit(0); }
+        if (inp === "done" || inp === "ok" || inp === "approved") {
+          const check = await fetch(\`\${BASE_URL}/api/runs/\${pendingId}\`, { headers: HEADERS }).then(r => r.json());
+          if (check.status !== "waiting_hitl") { res = check; done = true; }
+          else console.log("Still pending. Approve on the Runs page first.");
+        } else {
+          console.log("Approve the review first, then type 'done'.");
+        }
+      }
     }
   }
 
@@ -1302,78 +1607,123 @@ async function send(message) {
   return res.output;
 }
 
-console.log("\\n  AgentHub Chat — type 'exit' to quit\\n");
+async function startSession() {
+  const welcome = await getWelcome();
+  if (welcome) console.log(\`\\nAgent: \${welcome}\\n\`);
+  return [];
+}
+
+console.log("\\n  AgentHub Chat — ${agentName}\\n");
+let history = await startSession();
+
 while (true) {
   const msg = (await rl.question("You: ")).trim();
-  if (msg === "exit" || msg === "quit") { console.log("Bye."); rl.close(); break; }
   if (!msg) continue;
+  if (msg === "exit" || msg === "quit") { rl.close(); break; }
+  if (LOOP_MODE && msg === "restart") {
+    console.log("\\n  ↩ Starting fresh...\\n");
+    history = await startSession();
+    continue;
+  }
   try {
-    const output = await send(msg);
-    console.log(\`\\nAgent: \${typeof output === "string" ? output : JSON.stringify(output)}\\n\`);
+    const output = await send(msg, history);
+    const outStr = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+    console.log(\`\\nAgent: \${outStr}\\n\`);
+    if (LOOP_MODE) {
+      history = [...history, { role: "user", content: msg }, { role: "assistant", content: outStr }].slice(-20);
+    } else {
+      rl.close(); break;
+    }
   } catch (e) {
     console.log(\`\\nError: \${e.message}\\n\`);
+    rl.close(); break;
   }
 }`,
             },
             {
               title: 'Full integration (TypeScript)',
-              description: 'Typed helper for TypeScript projects — compile with tsc or use ts-node / tsx.',
+              description: 'Typed helper for TypeScript projects. Supports webhook callback for async HITL. Compile with tsc or run with: npx tsx agent.ts',
               code: `// agent.ts — run with: npx tsx agent.ts
 const AGENT_ID = "${savedAgentId}";
-const API_KEY = "${key}";
+const API_KEY  = "${key}";
 const BASE_URL = "${base}";
 
 interface AgentResponse {
   runId: string;
   output: unknown;
   status: "completed" | "failed" | "waiting_hitl" | "waiting_clarify";
+  tokens: number;
+  latencyMs: number;
   error?: string;
 }
 
-async function callAgent(
-  message: string,
-  onClarify: (question: string) => Promise<string>,
-  onHITL: (partial: unknown) => Promise<{ approved: boolean; feedback?: string }>
-): Promise<unknown> {
-  const headers = {
-    "Content-Type": "application/json",
-    "X-AgentHub-Key": API_KEY,
-  };
+interface RunOptions {
+  // Webhook URL — called with the final result after completion or HITL approval.
+  callbackUrl?: string;
+  // Secret used to sign webhook POST requests (X-AgentHub-Signature header).
+  // Verify on your server: HMAC-SHA256(secret, timestamp + "." + rawBody)
+  webhookSecret?: string;
+  // Handle clarifying questions mid-pipeline
+  onClarify?: (question: string) => Promise<string>;
+}
+
+async function callAgent(message: string, opts: RunOptions = {}): Promise<unknown> {
+  const headers = { "Content-Type": "application/json", "X-AgentHub-Key": API_KEY };
 
   let res: AgentResponse = await fetch(
     \`\${BASE_URL}/api/agents/\${AGENT_ID}/run\`,
-    { method: "POST", headers, body: JSON.stringify({ message }) }
+    { method: "POST", headers, body: JSON.stringify({ message, callbackUrl: opts.callbackUrl, webhookSecret: opts.webhookSecret }) }
   ).then(r => r.json());
 
-  while (res.status === "waiting_clarify" || res.status === "waiting_hitl") {
-    if (res.status === "waiting_clarify") {
-      const question = (res.output as { question?: string })?.question ?? "Please clarify:";
-      const answer = await onClarify(question);
-      res = await fetch(\`\${BASE_URL}/api/runs/\${res.runId}/clarify\`,
-        { method: "POST", headers, body: JSON.stringify({ answer }) }
-      ).then(r => r.json());
-    } else {
-      const partial = (res.output as { partial?: unknown })?.partial;
-      const { approved, feedback } = await onHITL(partial);
-      res = await fetch(\`\${BASE_URL}/api/runs/\${res.runId}/resume\`,
-        { method: "POST", headers, body: JSON.stringify({ approved, feedback }) }
-      ).then(r => r.json());
+  // Handle clarify pauses (end-user answers in your UI)
+  while (res.status === "waiting_clarify") {
+    const question = (res.output as { question?: string })?.question ?? "Please clarify:";
+    const answer = await (opts.onClarify?.(question) ?? Promise.resolve(""));
+    res = await fetch(\`\${BASE_URL}/api/runs/\${res.runId}/clarify\`,
+      { method: "POST", headers, body: JSON.stringify({ answer }) }
+    ).then(r => r.json());
+  }
+
+  // HITL: if callbackUrl is set, your webhook receives the final result after reviewer approves.
+  // Otherwise poll /api/runs/:runId for status changes.
+  if (res.status === "waiting_hitl") {
+    const out = res.output as { question?: string; partial?: unknown };
+    console.log("Pending review. runId:", res.runId);
+    console.log("Question:", out.question);
+    if (opts.callbackUrl) {
+      console.log("Webhook will be called after reviewer approves:", opts.callbackUrl);
     }
+    return res; // caller handles polling or awaits webhook
   }
 
   if (res.status === "failed") throw new Error(res.error ?? "Agent failed");
   return res.output;
 }
 
-// Usage
-const output = await callAgent(
-  ${JSON.stringify(msg)},
-  async (question) => { process.stdout.write(\`Agent: \${question}\\nYou: \`); return "your answer"; },
-  async (partial) => ({ approved: true, feedback: "Looks good" })
-);
-console.log("\\nAgent:", output);`,
+// Usage — async HITL with webhook
+const result = await callAgent(${JSON.stringify(msg)}, {
+  callbackUrl: "https://your-server.com/webhook",
+  webhookSecret: "your_secret_abc123",
+  onClarify: async (q) => { process.stdout.write(\`Agent: \${q}\\nYou: \`); return "your answer"; },
+});
+console.log("\\nAgent:", result);`,
             },
           ],
+        }
+
+        // Apply Start node's actual API field name to every snippet
+        if (apiField !== 'message') {
+          const patchField = (code: string) => code
+            .replace(/"message":\s*/g, `"${apiField}": `)
+            .replace(/\\"message\\":/g, `\\"${apiField}\\":`)
+            .replace(/\{ message \}/g, `{ "${apiField}": message }`)
+            .replace(/\{ message: /g, `{ "${apiField}": `)
+            .replace(/json=\{"message":/g, `json={"${apiField}":`)
+            .replace(/json=\{ "message":/g, `json={ "${apiField}":`)
+            .replace(/body: JSON\.stringify\(\{ message \}\)/g, `body: JSON.stringify({ "${apiField}": message })`)
+          ;(['curl', 'python', 'javascript'] as const).forEach(lang =>
+            snippets[lang].forEach(s => { s.code = patchField(s.code) })
+          )
         }
 
         const tabs: { id: 'curl' | 'python' | 'javascript'; label: string }[] = [
@@ -1387,39 +1737,42 @@ console.log("\\nAgent:", output);`,
         return (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 200,
-            background: 'rgba(0,0,0,0.7)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
           }} onClick={() => setCurlOpen(false)}>
             <div style={{
-              width: 720, maxHeight: '88vh', borderRadius: 16,
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+              width: '100%', maxWidth: 720, maxHeight: '88vh', borderRadius: 20,
+              background: '#fff', border: '1px solid #E5E5E5',
+              padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.06)',
               display: 'flex', flexDirection: 'column', overflowY: 'auto',
             }} onClick={e => e.stopPropagation()}>
               {/* Header */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
                 <div>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Integrate your agent</span>
-                  <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
-                    Agent ID: <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 5px', borderRadius: 3 }}>{savedAgentId}</code>
-                    {' · '}API key: <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 5px', borderRadius: 3 }}>API Keys</code> page
+                  <span style={{ fontSize: 15, fontWeight: 700, color: '#0D0D0D', letterSpacing: '-0.01em' }}>Integrate your agent</span>
+                  <p style={{ fontSize: 12, color: '#9B9B9B', marginTop: 4 }}>
+                    Agent ID: <code style={{ fontFamily: 'monospace', background: '#F7F7F8', padding: '1px 5px', borderRadius: 4, fontSize: 11, color: '#0D0D0D' }}>{savedAgentId}</code>
+                    {' · '}API key: <Link href="/api-keys" style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 500 }}>API Keys page</Link>
                   </p>
                 </div>
-                <button onClick={() => setCurlOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)' }}>
-                  <X size={16} />
+                <button onClick={() => setCurlOpen(false)} style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: '#9B9B9B', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#F7F7F8'; e.currentTarget.style.color = '#0D0D0D' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9B9B9B' }}>
+                  <X size={14} />
                 </button>
               </div>
 
-              {/* Language tabs */}
-              <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+              {/* Language tabs — pill style matching configure modal */}
+              <div style={{ display: 'flex', gap: 4, marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #E5E5E5' }}>
                 {tabs.map(tab => (
                   <button key={tab.id} onClick={() => setSnippetLang(tab.id)} style={{
-                    padding: '7px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    background: 'none', border: 'none',
-                    borderBottom: snippetLang === tab.id ? '2px solid var(--blue)' : '2px solid transparent',
-                    color: snippetLang === tab.id ? 'var(--blue)' : 'var(--text3)',
-                    marginBottom: -1,
-                  }}>
+                    padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    borderRadius: 7, border: 'none', transition: 'all 0.12s',
+                    background: snippetLang === tab.id ? '#0D0D0D' : 'transparent',
+                    color: snippetLang === tab.id ? '#fff' : '#9B9B9B',
+                  }}
+                    onMouseEnter={e => { if (snippetLang !== tab.id) { e.currentTarget.style.background = '#F7F7F8'; e.currentTarget.style.color = '#0D0D0D' } }}
+                    onMouseLeave={e => { if (snippetLang !== tab.id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9B9B9B' } }}>
                     {tab.label}
                   </button>
                 ))}
@@ -1489,22 +1842,29 @@ console.log("\\nAgent:", output);`,
       {importOpen && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 200,
-          background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
         }} onClick={() => setImportOpen(false)}>
           <div style={{
-            width: 520, borderRadius: 16,
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            width: '100%', maxWidth: 520, borderRadius: 20,
+            background: '#fff', border: '1px solid #E5E5E5',
+            padding: '24px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.06)',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Import Agent Schema</span>
-              <button onClick={() => setImportOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)' }}>
-                <X size={16} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: '#F7F7F8', border: '1px solid #E5E5E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Upload size={13} color="#6B6B6B" />
+                </div>
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#0D0D0D', letterSpacing: '-0.01em' }}>Import Schema</span>
+              </div>
+              <button onClick={() => setImportOpen(false)} style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: '#9B9B9B', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#F7F7F8'; e.currentTarget.style.color = '#0D0D0D' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9B9B9B' }}>
+                <X size={14} />
               </button>
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>
-              Paste a JSON object with a <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 4px', borderRadius: 3 }}>nodes</code> array (and optionally <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 4px', borderRadius: 3 }}>edges</code> and <code style={{ fontFamily: 'monospace', background: 'var(--surface2)', padding: '1px 4px', borderRadius: 3 }}>name</code>).
+            <p style={{ fontSize: 13, color: '#6B6B6B', marginBottom: 14, lineHeight: 1.5 }}>
+              Paste a JSON with a <code style={{ fontFamily: 'monospace', background: '#F7F7F8', padding: '1px 5px', borderRadius: 4, fontSize: 12 }}>nodes</code> array (and optionally <code style={{ fontFamily: 'monospace', background: '#F7F7F8', padding: '1px 5px', borderRadius: 4, fontSize: 12 }}>edges</code> and <code style={{ fontFamily: 'monospace', background: '#F7F7F8', padding: '1px 5px', borderRadius: 4, fontSize: 12 }}>name</code>).
             </p>
             <textarea
               value={importJson}
@@ -1512,22 +1872,24 @@ console.log("\\nAgent:", output);`,
               placeholder={'{\n  "name": "My Agent",\n  "nodes": [...],\n  "edges": [...]\n}'}
               rows={12}
               style={{
-                width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 11,
+                width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 11, boxSizing: 'border-box',
                 fontFamily: 'monospace', lineHeight: 1.6, resize: 'vertical',
-                background: 'var(--bg)', border: `1px solid ${importError ? 'var(--red)' : 'var(--border)'}`,
-                color: 'var(--text)', outline: 'none',
+                background: '#fff', border: `1px solid ${importError ? '#DC2626' : '#E5E5E5'}`,
+                color: '#0D0D0D', outline: 'none',
               }}
             />
-            {importError && <p style={{ fontSize: 11, color: 'var(--red)', marginTop: 6 }}>{importError}</p>}
+            {importError && <p style={{ fontSize: 12, color: '#DC2626', marginTop: 6 }}>{importError}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button onClick={() => setImportOpen(false)} style={{
-                padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)',
-                background: 'var(--surface2)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
-              }}>Cancel</button>
+                padding: '8px 16px', borderRadius: 8, border: '1px solid #E5E5E5',
+                background: '#F7F7F8', color: '#6B6B6B', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+              }}
+                onMouseEnter={e => e.currentTarget.style.background = '#EFEFEF'}
+                onMouseLeave={e => e.currentTarget.style.background = '#F7F7F8'}>Cancel</button>
               <button onClick={loadImport} disabled={!importJson.trim()} style={{
                 padding: '8px 20px', borderRadius: 8, border: 'none',
-                background: importJson.trim() ? 'var(--blue)' : 'var(--surface2)',
-                color: importJson.trim() ? '#fff' : 'var(--text3)',
+                background: importJson.trim() ? '#000' : '#E5E5E5',
+                color: importJson.trim() ? '#fff' : '#9B9B9B',
                 fontSize: 13, fontWeight: 600, cursor: importJson.trim() ? 'pointer' : 'not-allowed',
               }}>Load Schema</button>
             </div>

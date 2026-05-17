@@ -6,14 +6,13 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/agents'
 
-  if (code) {
+  if (!code) return NextResponse.redirect(`${origin}/login?error=auth_failed`)
+
+  try {
     const supabase = await createSupabaseServerClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
+
     if (!error) {
-      // On Vercel the origin may be the internal URL — use x-forwarded-host
-      // (the public domain) so the redirect goes to the right place.
-      // Only use x-forwarded-host in production (not localhost) to avoid
-      // redirecting to https://localhost which has no SSL cert.
       const forwardedHost = request.headers.get('x-forwarded-host')
       const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1')
       if (forwardedHost && !isLocalhost) {
@@ -21,7 +20,14 @@ export async function GET(request: NextRequest) {
       }
       return NextResponse.redirect(`${origin}${next}`)
     }
-  }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_failed`)
+    return NextResponse.redirect(`${origin}/login?error=auth_failed`)
+  } catch {
+    // Network timeout (common on local dev with slow Supabase connectivity).
+    // Redirect to a retry page instead of a dead error.
+    const retryUrl = new URL(`${origin}/login`)
+    retryUrl.searchParams.set('error', 'timeout')
+    retryUrl.searchParams.set('hint', 'Network timeout reaching Supabase. Please try signing in again.')
+    return NextResponse.redirect(retryUrl)
+  }
 }

@@ -1,41 +1,186 @@
 @import "tailwindcss";
 
-/* ── Default: Dark Theme ───────────────────────────────────────── */
-:root, [data-theme="dark"] {
-  --bg: #06060f;
-  --surface: #0b0b1c;
-  --surface2: #10102a;
-  --border: #1a1a35;
-  --border2: #14142e;
-  --text: #ffffff;
-  --text2: #c8c8e8;
-  --text3: #8888b0;
-  --blue: #7c6ff0;
-  --green: #22d79a;
-  --orange: #f5a020;
-  --purple: #b080f8;
-  --red: #e85555;
-  --cyan: #22d3ee;
-  --shadow: 0 8px 40px rgba(0,0,0,0.7);
+/* ── Light Theme (default) ─────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg:        #FFFFFF;
+  --surface:   #F7F7F8;
+  --surface2:  #EFEFEF;
+  --surface3:  #E8E8E8;
+
+  /* Borders */
+  --border:    #E5E5E5;
+  --border2:   #F0F0F0;
+
+  /* Text */
+  --text:      #0D0D0D;
+  --text2:     #6B6B6B;
+  --text3:     #9B9B9B;
+  --text4:     #C2C2C2;
+
+  /* Primary action — black */
+  --primary:        #000000;
+  --primary-hover:  #1A1A1A;
+  --primary-fg:     #FFFFFF;
+
+  /* Accent blue */
+  --accent:         #2563EB;
+  --accent-rgb:     37, 99, 235;   /* used for rgba(var(--accent-rgb), 0.x) */
+  --accent-hover:   #1D4ED8;
+  --accent-light:   #EFF6FF;
+  --accent-border:  #BFDBFE;
+
+  /* Status */
+  --success:        #16A34A;
+  --success-bg:     #F0FDF4;
+  --success-border: #BBF7D0;
+  --error:          #DC2626;
+  --error-bg:       #FEF2F2;
+  --error-border:   #FECACA;
+  --warning:        #D97706;
+  --warning-bg:     #FFFBEB;
+  --warning-border: #FDE68A;
+
+  /* Dark surfaces — canvas, code blocks */
+  --dark-bg:       #0A0A0A;
+  --dark-surface:  #111111;
+  --dark-surface2: #1A1A1A;
+  --dark-surface3: #242424;
+  --dark-border:   #2A2A2A;
+  --dark-border2:  #333333;
+  --dark-text:     #FFFFFF;
+  --dark-text2:    #A1A1AA;
+  --dark-text3:    #71717A;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.08), 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.1),  0 8px 10px rgba(0,0,0,0.04);
+
+  /* Nav background — matches landing page navBg */
+  --nav-bg: rgba(255,255,255,0.92);
+
+  /* Card surfaces — use these for dashboard cards so they contrast the page bg in both modes */
+  --card-bg:    #FFFFFF;
+  --card-hover: #F7F7F8;
+
+  /* Legacy aliases — keeps existing components working */
+  --blue:   var(--accent);
+  --green:  var(--success);
+  --orange: var(--warning);
+  --red:    var(--error);
+  --purple: #9333EA;
+  --cyan:   #5ED7F7;
+  --shadow: var(--shadow-lg);
 }
 
-/* ── Light Theme ────────────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg: #f4f4fa;
-  --surface: #ffffff;
-  --surface2: #f0f0f8;
-  --border: #ddddf0;
-  --border2: #e8e8f5;
-  --text: #0e0e2e;
-  --text2: #4a4a7a;
-  --text3: #9090b8;
-  --blue: #5b52d6;
-  --green: #0ea572;
-  --orange: #d47a10;
-  --purple: #8840d8;
-  --red: #cc3333;
-  --cyan: #0891b2;
-  --shadow: 0 8px 40px rgba(0,0,0,0.12);
+/* ── Dark Theme — matches landing page DARK_T tokens ───────────── */
+[data-theme="dark"] {
+  --bg:      #050505;
+  --surface: #0B0B0B;
+  --surface2:#111111;
+  --surface3:#171717;
+  --border:  rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.04);
+  --text:    #FFFFFF;
+  --text2:   #A1A1AA;
+  --text3:   #71717A;
+  --text4:   #52525B;
+
+  --primary:       #FFFFFF;
+  --primary-hover: #E4E4E7;
+  --primary-fg:    #000000;
+
+  --accent:        #60A5FA;
+  --accent-rgb:    96, 165, 250;
+  --accent-hover:  #3B82F6;
+  --accent-light:  rgba(96,165,250,0.1);
+  --accent-border: rgba(96,165,250,0.25);
+
+  --success: #22d79a;
+  --success-bg:     rgba(34,215,154,0.08);
+  --success-border: rgba(34,215,154,0.2);
+  --error:   #f87171;
+  --error-bg:       rgba(248,113,113,0.08);
+  --error-border:   rgba(248,113,113,0.2);
+  --warning: #fbbf24;
+  --warning-bg:     rgba(251,191,36,0.08);
+  --warning-border: rgba(251,191,36,0.2);
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.6);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.7);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.8);
+
+  /* Nav background */
+  --nav-bg: rgba(5,5,5,0.92);
+
+  /* Card surfaces — use these for dashboard cards so they contrast the page bg in both modes */
+  --card-bg:    #111111;
+  --card-hover: #171717;
+
+  /* Legacy aliases */
+  --blue:   #60A5FA;
+  --green:  #22d79a;
+  --orange: #fbbf24;
+  --purple: #a78bfa;
+  --red:    #f87171;
+  --cyan:   #5ED7F7;
+  --shadow: 0 8px 40px rgba(0,0,0,0.8);
+}
+
+/* Laser traces the button border — requires @property for animated conic-gradient */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes borderSpin {
+  to { --border-angle: 1turn; }
+}
+.laser-border {
+  --border-angle: 0deg;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background:
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    conic-gradient(
+      from var(--border-angle),
+      transparent 0%,
+      transparent 73%,
+      rgba(var(--accent-rgb), 0.1) 78%,
+      rgba(var(--accent-rgb), 0.45) 82%,
+      var(--accent) 85.5%,
+      rgba(255,255,255,0.95) 87%,
+      var(--accent) 88.5%,
+      rgba(var(--accent-rgb), 0.3) 92%,
+      transparent 96%
+    ) border-box;
+  animation: borderSpin 2.5s linear infinite;
+  display: inline-flex;
+}
+
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.45; }
+  50%       { opacity: 1;    }
+}
+
+@keyframes sliverIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -52,30 +197,50 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
-/* ── ReactFlow dark mode ────────────────────────────────────────── */
+/* ── ReactFlow canvas ───────────────────────────────────────────── */
 .react-flow { background: var(--bg) !important; }
-.react-flow__pane { background: var(--bg) !important; }
-.react-flow__background { background: var(--bg) !important; }
-/* Remove ReactFlow's default white node wrapper so our custom nodes control their own bg */
+.react-flow__pane { background: transparent !important; }
 .react-flow__node { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; border-radius: 0 !important; }
 .react-flow__node.selected > div { outline: none !important; }
-/* Controls */
 .react-flow__controls { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; overflow: hidden; }
 .react-flow__controls-button { background: var(--surface) !important; border-color: var(--border) !important; color: var(--text2) !important; fill: var(--text2) !important; }
 .react-flow__controls-button:hover { background: var(--surface2) !important; }
 .react-flow__controls-button svg { fill: var(--text2) !important; }
-/* Minimap */
 .react-flow__minimap { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; overflow: hidden !important; }
 .react-flow__minimap-svg { background: var(--surface) !important; }
-.react-flow__minimap-mask { fill: rgba(6,6,15,0.6) !important; }
-/* Selection box */
-.react-flow__selection { background: rgba(124,111,240,0.06) !important; border-color: var(--blue) !important; }
-.react-flow__nodesselection-rect { border-color: var(--blue) !important; background: rgba(124,111,240,0.06) !important; }
-/* Edge labels */
-.react-flow__edge-textbg { fill: var(--surface) !important; }
-.react-flow__edge-text { fill: var(--text2) !important; }
+.react-flow__minimap-mask { fill: rgba(0,0,0,0.08) !important; }
+.react-flow__selection { background: rgba(37,99,235,0.05) !important; border-color: var(--accent) !important; }
+.react-flow__nodesselection-rect { border-color: var(--accent) !important; background: rgba(37,99,235,0.05) !important; }
+.react-flow__edge-textbg { fill: var(--bg) !important; rx: 4; ry: 4; }
+.react-flow__edge-text { fill: var(--text2) !important; font-size: 10px !important; font-weight: 600 !important; font-family: inherit !important; }
+/* Dots: dark mode — subtle so they don't dominate */
+[data-theme="dark"] .react-flow__background circle,
+[data-theme="dark"] .react-flow__background path { fill: #252528 !important; }
 
-/* ── Consistent form field inputs across all config tabs ─────── */
+/* ── Node entrance spring animation ────────────────────────────── */
+@keyframes nodeEnter {
+  0%   { opacity: 0; transform: scale(0.82); }
+  60%  { opacity: 1; transform: scale(1.04); }
+  80%  { transform: scale(0.98); }
+  100% { transform: scale(1); }
+}
+.react-flow__node.node-entering > div {
+  animation: nodeEnter 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ── Node hover lift (shadow only — no translateY to avoid handle cursor flicker) ── */
+.react-flow__node:not(.dragging) > div {
+  transition: box-shadow 0.15s ease !important;
+}
+.react-flow__node:not(.dragging):not(.selected) > div:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07) !important;
+}
+
+/* ── Solid edges — no dashes ────────────────────────────────────── */
+.react-flow__edge-path { stroke-dasharray: none !important; }
+.react-flow__edge.animated .react-flow__edge-path { animation: none !important; stroke-dasharray: none !important; }
+
+/* ── Consistent form field inputs ───────────────────────────────── */
 .field-inputs > input,
 .field-inputs > select {
   width: 100%;
@@ -97,4 +262,27 @@ body {
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 28px;
+}
+
+
+/* ── ReactFlow handle cursor fix ───────────────────────────────────
+   Handles have a larger invisible hit area than their visual dot.
+   Setting crosshair prevents cursor flickering when hovering near node edges. */
+.react-flow__handle {
+  cursor: crosshair !important;
+}
+.react-flow__handle:hover {
+  cursor: crosshair !important;
+}
+
+/* ── Dark mode node cards ───────────────────────────────────────────
+   In dark mode --bg = #050505 which blends with the canvas.
+   Use a noticeably lighter surface so cards are readable. */
+[data-theme="dark"] .react-flow__node > div {
+  background: #1C1C1E !important;
+  border-color: #3A3A3C !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4) !important;
+}
+[data-theme="dark"] .react-flow__node > div > div {
+  background: #1C1C1E !important;
 }

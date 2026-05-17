@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import {
   Send, Wand2, User, ArrowRight, AlertCircle, Wrench, Table2, CheckCircle,
   ExternalLink, Loader2, Plus, Clock, ChevronDown, Trash2, Bot, Paperclip,
-  X, Play, ChevronRight, Edit3, GitBranch, Layers,
+  X, Play, ChevronRight, Edit3, GitBranch, Layers, Zap,
 } from 'lucide-react'
 
 interface Model { id: string; name: string; provider: string; model_id: string }
@@ -26,6 +27,7 @@ interface BuildSession {
   messages: Message[]
   agentId?: string
   agentName?: string
+  builtMsgIdx?: number
   createdAt: string
   updatedAt: string
 }
@@ -198,7 +200,7 @@ function PlanCard({
             <GitBranch size={10} /> {nodeCount} node{nodeCount !== 1 ? 's' : ''}
           </span>
           {plan.tools.map((t, i) => (
-            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#22d79a', background: 'rgba(34,215,154,0.08)', border: '1px solid rgba(34,215,154,0.2)', borderRadius: 6, padding: '3px 8px' }}>
+            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px' }}>
               <Wrench size={10} /> {t.name}
             </span>
           ))}
@@ -251,14 +253,26 @@ function PlanCard({
   )
 }
 
-function BuildPageInner() {
+interface BuildPageProps {
+  selectedModel?: string
+  setSelectedModel?: (m: string) => void
+  models?: Model[]
+}
+
+function BuildPageInner({ selectedModel: extModel, setSelectedModel: extSetModel, models: extModels }: BuildPageProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const [models, setModels] = useState<Model[]>([])
-  const [selectedModel, setSelectedModel] = useState('')
+  const [internalModels, setInternalModels] = useState<Model[]>([])
+  const [internalSelectedModel, setInternalSelectedModel] = useState('')
+  const [userInitial, setUserInitial] = useState('?')
+  const models = extModels ?? internalModels
+  const selectedModel = extModel ?? internalSelectedModel
+  const setSelectedModel = extSetModel ?? setInternalSelectedModel
   const [sessions, setSessions] = useState<BuildSession[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
+  const [deletedSessionId, setDeletedSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: WELCOME }])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -275,6 +289,17 @@ function BuildPageInner() {
 
   // Per-plan model selection: msgIdx → model name
   const [planModels, setPlanModels] = useState<Record<number, string>>({})
+
+  // Per-plan target agent: msgIdx → agentId ('new' = create new)
+  const [planTargets, setPlanTargets] = useState<Record<number, string>>({})
+
+  // Existing agents list for target selector
+  const [existingAgents, setExistingAgents] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    fetch('/api/agents').then(r => r.json()).then(d => {
+      if (Array.isArray(d)) setExistingAgents(d.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })))
+    }).catch(() => {})
+  }, [])
 
   // Test after build
   const [builtAgentId, setBuiltAgentId] = useState<string | null>(null)
@@ -314,7 +339,15 @@ function BuildPageInner() {
   }, [searchParams])
 
   useEffect(() => {
-    fetch('/api/models').then(r => r.json()).then(d => { if (Array.isArray(d)) setModels(d) }).catch(() => {})
+    if (!extModels) {
+      fetch('/api/models').then(r => r.json()).then(d => { if (Array.isArray(d)) setInternalModels(d) }).catch(() => {})
+    }
+    createSupabaseBrowserClient().auth.getUser().then(({ data }) => {
+      const u = data.user
+      if (!u) return
+      const name: string = u.user_metadata?.full_name ?? u.user_metadata?.name ?? u.email ?? ''
+      setUserInitial(name.trim()[0]?.toUpperCase() ?? '?')
+    })
     const saved = loadSessions()
     setSessions(saved)
   }, [])
@@ -340,7 +373,7 @@ function BuildPageInner() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  function saveCurrentSession(msgs: Message[], agentId?: string, agentName?: string) {
+  function saveCurrentSession(msgs: Message[], agentId?: string, agentName?: string, builtMsgIdx?: number) {
     if (msgs.length <= 1) return
     const userMessages = msgs.filter(m => m.role === 'user')
     if (userMessages.length === 0) return
@@ -351,12 +384,12 @@ function BuildPageInner() {
       let updated: BuildSession[]
       if (existing) {
         updated = prev.map(s => s.id === currentSessionId
-          ? { ...s, name, messages: msgs, agentId: agentId ?? s.agentId, agentName: agentName ?? s.agentName, updatedAt: now }
+          ? { ...s, name, messages: msgs, agentId: agentId ?? s.agentId, agentName: agentName ?? s.agentName, builtMsgIdx: builtMsgIdx ?? s.builtMsgIdx, updatedAt: now }
           : s
         )
       } else {
         const newSession: BuildSession = {
-          id: crypto.randomUUID(), name, messages: msgs, agentId, agentName, createdAt: now, updatedAt: now,
+          id: crypto.randomUUID(), name, messages: msgs, agentId, agentName, builtMsgIdx, createdAt: now, updatedAt: now,
         }
         setCurrentSessionId(newSession.id)
         updated = [newSession, ...prev]
@@ -391,19 +424,27 @@ function BuildPageInner() {
     setShowSessionList(false)
     setBuiltAgentId(session.agentId ?? null)
     setBuiltAgentName(session.agentName ?? null)
-    setBuiltMsgIdx(null)
+    setBuiltMsgIdx(session.builtMsgIdx ?? null)
     setTestOutput(null)
     setLastPlanMsgIdx(null)
   }
 
-  function deleteSession(sessionId: string, e: React.MouseEvent) {
+  async function deleteSession(sessionId: string, e: React.MouseEvent) {
     e.stopPropagation()
-    setSessions(prev => {
-      const updated = prev.filter(s => s.id !== sessionId)
-      saveSessions(updated)
-      return updated
-    })
-    if (currentSessionId === sessionId) startNewSession()
+    setDeletingSessionId(sessionId)
+    // small async tick so spinner renders before synchronous state update
+    await new Promise(r => setTimeout(r, 400))
+    setDeletingSessionId(null)
+    setDeletedSessionId(sessionId)
+    setTimeout(() => {
+      setDeletedSessionId(null)
+      setSessions(prev => {
+        const updated = prev.filter(s => s.id !== sessionId)
+        saveSessions(updated)
+        return updated
+      })
+      if (currentSessionId === sessionId) startNewSession()
+    }, 800)
   }
 
   function handleFileAttach(e: React.ChangeEvent<HTMLInputElement>) {
@@ -512,10 +553,14 @@ function BuildPageInner() {
     setBuiltAgentId(null)
     setTestOutput(null)
 
+    // Determine target: explicit per-plan selection > editingAgentId > new
+    const target = planTargets[msgIdx] ?? (editingAgentId ?? 'new')
+    const targetAgentId = target !== 'new' ? target : null
+
     const steps: ImportStep[] = [
       ...plan.tools.map(t => ({ label: `Create tool: ${t.name}`, status: 'pending' as const })),
       ...plan.datatables.map(d => ({ label: `Create datatable: ${d.name}`, status: 'pending' as const })),
-      { label: editingAgentId ? `Update agent: ${plan.name}` : `Create agent: ${plan.name}`, status: 'pending' as const },
+      { label: targetAgentId ? `Update agent: ${plan.name}` : `Create agent: ${plan.name}`, status: 'pending' as const },
     ]
     setImportSteps(steps)
 
@@ -634,9 +679,9 @@ function BuildPageInner() {
       setStep(stepIdx, 'active')
 
       let agentId: string
-      if (editingAgentId) {
-        // Update existing agent
-        const res = await fetch(`/api/agents/${editingAgentId}`, {
+      if (targetAgentId) {
+        // Update existing agent (user selected one from dropdown, or it's the active editing agent)
+        const res = await fetch(`/api/agents/${targetAgentId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: plan.name, description: plan.description ?? '', schema: patchedSchema }),
@@ -645,8 +690,7 @@ function BuildPageInner() {
           const err = await res.json().catch(() => ({})) as { error?: string }
           throw new Error(err.error ?? `Agent update failed (${res.status})`)
         }
-        agentId = editingAgentId
-        // Update the local editing schema
+        agentId = targetAgentId
         setEditingAgentSchema(patchedSchema)
       } else {
         // Create new agent
@@ -664,13 +708,21 @@ function BuildPageInner() {
       }
 
       setStep(stepIdx, 'done')
-      saveCurrentSession(messages, agentId, plan.name)
+      saveCurrentSession(messages, agentId, plan.name, msgIdx)
 
-      // Show inline test instead of navigating away
       setBuiltAgentId(agentId)
       setBuiltAgentName(plan.name)
       setBuiltMsgIdx(msgIdx)
       setImportingIdx(null)
+
+      // Auto-switch to edit mode so subsequent messages modify this agent
+      setEditingAgentId(agentId)
+      setEditingAgentName(plan.name)
+      setEditingAgentSchema(patchedSchema)
+      // Also refresh the existing agents list so dropdown shows the new agent
+      fetch('/api/agents').then(r => r.json()).then(d => {
+        if (Array.isArray(d)) setExistingAgents(d.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })))
+      }).catch(() => {})
 
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed')
@@ -703,116 +755,78 @@ function BuildPageInner() {
   const showStarters = messages.length === 1 && !streaming && !editingAgentId
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)', fontFamily: 'inherit' }}>
+    <div style={{ display: 'flex', height: '100%', background: 'var(--bg)', fontFamily: 'inherit' }}>
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div style={{ padding: '9px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
-          <div style={{ width: 22, height: 22, borderRadius: 6, background: 'linear-gradient(135deg,#7c6ff0,#b080f8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Wand2 size={10} color="white" />
-          </div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>Build via Chat</span>
-        </div>
+      {/* ── Sidebar ────────────────────────────────────────────────────── */}
+      <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--surface)' }}>
 
-        {editingAgentId && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 6, background: 'rgba(245,160,32,0.1)', border: '1px solid rgba(245,160,32,0.25)', flexShrink: 0 }}>
-            <Edit3 size={10} color="#f5a020" />
-            <span style={{ fontSize: 11, color: '#f5a020', fontWeight: 600 }}>Editing: {editingAgentName}</span>
-            <button onClick={() => { setEditingAgentId(null); setEditingAgentName(null); setEditingAgentSchema(null) }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f5a020', padding: 0, display: 'flex', marginLeft: 1, opacity: 0.7 }}>
-              <X size={10} />
-            </button>
-          </div>
-        )}
-
-        {/* Session picker */}
-        <div ref={sessionListRef} style={{ position: 'relative', flex: 1, maxWidth: 240 }}>
-          <button onClick={() => setShowSessionList(v => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text3)', fontSize: 12, cursor: 'pointer', outline: 'none', transition: 'border-color 0.15s' }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(124,111,240,0.35)')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+        {/* New build — black pill button */}
+        <div style={{ padding: '10px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <button onClick={startNewSession}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              height: 32, padding: '0 14px', borderRadius: 8, width: '100%',
+              border: 'none', cursor: 'pointer',
+              background: 'var(--primary)', color: 'var(--primary-fg)',
+              fontSize: 13, fontWeight: 600,
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary)' }}
           >
-            <Clock size={11} style={{ flexShrink: 0 }} />
-            <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {currentSession ? currentSession.name : 'New build'}
-            </span>
-            <ChevronDown size={11} style={{ flexShrink: 0, transition: 'transform 0.15s', transform: showSessionList ? 'rotate(180deg)' : 'none' }} />
+            <Plus size={14} strokeWidth={2} /> Build a new agent
           </button>
-
-          {showSessionList && (
-            <div style={{ position: 'absolute', top: 'calc(100% + 5px)', left: 0, right: 0, zIndex: 200, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.25)', overflow: 'hidden', minWidth: 260 }}>
-              <button onClick={startNewSession}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 13px', border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border)' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              >
-                <Plus size={12} /> New build
-              </button>
-              {sessions.length === 0 ? (
-                <div style={{ padding: '12px', fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>No previous builds yet</div>
-              ) : (
-                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                  {sessions.map(s => (
-                    <div key={s.id} onClick={() => loadSession(s)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 13px', cursor: 'pointer', background: s.id === currentSessionId ? 'var(--surface2)' : 'transparent', borderBottom: '1px solid var(--border2)', transition: 'background 0.1s' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = s.id === currentSessionId ? 'var(--surface2)' : 'transparent')}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 1 }}>
-                          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{timeAgo(s.updatedAt)}</span>
-                          {s.agentName && (
-                            <span style={{ fontSize: 10, color: '#22d79a', background: 'rgba(34,215,154,0.08)', border: '1px solid rgba(34,215,154,0.18)', borderRadius: 4, padding: '0 5px' }}>
-                              {s.agentName}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <button onClick={e => deleteSession(s.id, e)}
-                        style={{ padding: 4, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, display: 'flex', opacity: 0.5, transition: 'opacity 0.15s' }}
-                        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = 'var(--red)' }}
-                        onMouseLeave={e => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.color = 'var(--text3)' }}
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
-        <div style={{ flex: 1 }} />
 
-        {/* Model picker — compact */}
-        <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
-          style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer', outline: 'none', maxWidth: 180 }}>
-          <option value="">Gemini 2.5 Flash</option>
-          {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-        </select>
+        {/* Session history */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {sessions.length === 0 ? (
+            <div style={{ padding: '20px 14px', fontSize: 12, color: 'var(--text4)', textAlign: 'center', lineHeight: 1.6 }}>No history yet.<br />Start a new build.</div>
+          ) : sessions.map(s => (
+            <div key={s.id} onClick={() => loadSession(s)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', background: s.id === currentSessionId ? 'var(--surface2)' : 'transparent', borderBottom: '1px solid var(--border2)', borderLeft: `2px solid ${s.id === currentSessionId ? 'var(--text)' : 'transparent'}`, transition: 'background 0.1s, border-color 0.1s' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = s.id === currentSessionId ? 'var(--surface2)' : 'transparent')}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{timeAgo(s.updatedAt)}</div>
+              </div>
+              <button
+                onClick={e => deleteSession(s.id, e)}
+                disabled={deletingSessionId === s.id || deletedSessionId === s.id}
+                style={{
+                  width: 22, height: 22, borderRadius: 5, border: 'none', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: deletingSessionId === s.id || deletedSessionId === s.id ? 'default' : 'pointer',
+                  background: deletedSessionId === s.id ? 'var(--success-bg)' : 'var(--error-bg)',
+                  color: deletedSessionId === s.id ? 'var(--success)' : 'var(--error)',
+                  opacity: deletingSessionId === s.id ? 0.6 : 1,
+                  transition: 'opacity 0.1s',
+                }}
+                onMouseEnter={e => { if (!deletingSessionId && !deletedSessionId) e.currentTarget.style.opacity = '0.75' }}
+                onMouseLeave={e => { if (!deletingSessionId && !deletedSessionId) e.currentTarget.style.opacity = '1' }}
+              >
+                {deletingSessionId === s.id
+                  ? <Loader2 size={10} style={{ animation: 'spin 0.7s linear infinite' }} />
+                  : deletedSessionId === s.id
+                  ? <CheckCircle size={10} />
+                  : <Trash2 size={10} />
+                }
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
+      {/* ── Chat column ────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+
       {/* ── Scroll area ────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 16px 12px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 20px 12px' }}>
         <div style={{ maxWidth: 700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-          {/* Starter prompts */}
-          {showStarters && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 7, marginBottom: 28 }}>
-              {STARTER_PROMPTS.map((p, i) => (
-                <button key={i} onClick={() => sendMessage(p.label)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', lineHeight: 1.4 }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(124,111,240,0.4)'; e.currentTarget.style.background = 'rgba(124,111,240,0.04)'; e.currentTarget.style.color = 'var(--text)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface)'; e.currentTarget.style.color = 'var(--text2)' }}
-                >
-                  <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>{p.icon}</span>
-                  <span>{p.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Messages */}
           {messages.map((msg, idx) => {
@@ -824,15 +838,22 @@ function BuildPageInner() {
             return (
               <div key={idx} style={{ marginBottom: 20, animation: 'fadeUp 0.18s ease-out both' }}>
                 {isUser ? (
-                  /* User bubble — right aligned */
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <div style={{ maxWidth: '78%', padding: '10px 15px', borderRadius: '18px 18px 4px 18px', background: 'rgba(124,111,240,0.13)', border: '1px solid rgba(124,111,240,0.2)', fontSize: 14, color: 'var(--text)', lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  /* User bubble — right aligned with avatar */
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-end', gap: 8 }}>
+                    <div style={{ maxWidth: '76%', padding: '10px 15px', borderRadius: '18px 18px 4px 18px', background: 'var(--primary)', color: 'var(--primary-fg)', fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {msg.content}
+                    </div>
+                    <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--text)', color: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, fontWeight: 700 }}>
+                      {userInitial}
                     </div>
                   </div>
                 ) : (
-                  /* Assistant — no bubble, just text + plan cards */
-                  <div style={{ paddingRight: 8 }}>
+                  /* Assistant — avatar + text */
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                      <Zap size={12} color="var(--bg)" strokeWidth={2.5} />
+                    </div>
+                  <div style={{ flex: 1, paddingRight: 8 }}>
                     {/* Typing indicator */}
                     {isStreamingThis && msg.content === '' && (
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '10px 2px', marginBottom: 4 }}>
@@ -860,12 +881,12 @@ function BuildPageInner() {
                       const isImporting = importingIdx === idx
 
                       return (
-                        <div key={pi} style={{ marginBottom: 10, borderRadius: 12, border: `1px solid ${plan ? 'rgba(124,111,240,0.3)' : 'var(--border)'}`, overflow: 'hidden', background: 'var(--surface)', boxShadow: plan ? '0 2px 12px rgba(124,111,240,0.08)' : '0 1px 4px rgba(0,0,0,0.06)' }}>
+                        <div key={pi} style={{ marginBottom: 10, borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden', background: 'var(--surface)', boxShadow: 'var(--shadow-xs)' }}>
                           {/* Plan toolbar */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: plan ? 'rgba(124,111,240,0.06)' : 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {plan && <Layers size={11} color="var(--blue)" />}
-                              <span style={{ fontSize: 10, fontFamily: 'monospace', color: plan ? 'var(--blue)' : 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                              {plan && <Layers size={11} color="var(--text3)" />}
+                              <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                                 {plan ? (editingAgentId ? 'Updated plan' : 'Build plan') : (part.lang || 'code')}
                               </span>
                             </div>
@@ -873,33 +894,42 @@ function BuildPageInner() {
                             {plan && (
                               <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
                                 {builtMsgIdx === idx && builtAgentId ? (
+                                  /* This specific plan was built */
                                   <>
-                                    <span style={{ fontSize: 11, color: '#22d79a', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}>
+                                    <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}>
                                       <CheckCircle size={11} /> Built
                                     </span>
                                     <button onClick={() => router.push(`/builder/${builtAgentId}`)}
-                                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 11px', borderRadius: 7, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 11px', borderRadius: 7, border: 'none', background: 'var(--primary)', color: 'var(--primary-fg)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
                                       <ExternalLink size={10} /> Open in Builder
                                     </button>
                                   </>
-                                ) : (
+                                ) : lastPlanMsgIdx === idx ? (
+                                  /* This is the LATEST plan and not yet built — show dropdown + apply */
                                   <>
-                                    {editingAgentId && (
-                                      <button onClick={() => router.push(`/builder/${editingAgentId}`)}
-                                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                                        <ExternalLink size={10} /> Open
-                                      </button>
-                                    )}
+                                    <div style={{ position: 'relative' }}>
+                                      <select
+                                        value={planTargets[idx] ?? (editingAgentId ?? 'new')}
+                                        onChange={e => setPlanTargets(prev => ({ ...prev, [idx]: e.target.value }))}
+                                        style={{ fontSize: 11, padding: '4px 22px 4px 8px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', outline: 'none', appearance: 'none', fontFamily: 'inherit', fontWeight: 500 }}>
+                                        <option value="new">New agent</option>
+                                        {existingAgents.map(a => (
+                                          <option key={a.id} value={a.id}>{a.name}</option>
+                                        ))}
+                                      </select>
+                                      <ChevronDown size={9} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+                                    </div>
                                     <button onClick={() => importPlan(idx, plan, planModels[idx] || undefined)}
-                                      disabled={isImporting || openingIdx === idx}
-                                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: isImporting ? 'default' : 'pointer', background: isImporting ? 'var(--surface2)' : 'var(--blue)', color: isImporting ? 'var(--text3)' : '#fff', transition: 'background 0.15s' }}>
+                                      disabled={isImporting}
+                                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: isImporting ? 'default' : 'pointer', background: isImporting ? 'var(--surface2)' : 'var(--primary)', color: isImporting ? 'var(--text3)' : 'var(--primary-fg)', transition: 'background 0.15s' }}>
                                       {isImporting
-                                        ? <><span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />{editingAgentId ? 'Applying…' : 'Building…'}</>
-                                        : <><ArrowRight size={11} />{editingAgentId ? 'Apply' : 'Build it'}</>
+                                        ? <><span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />Applying…</>
+                                        : <><ArrowRight size={11} />{(planTargets[idx] ?? (editingAgentId ?? 'new')) !== 'new' ? 'Apply' : 'Build it'}</>
                                       }
                                     </button>
                                   </>
-                                )}
+                                ) : null
+                                }
                               </div>
                             )}
                           </div>
@@ -908,9 +938,9 @@ function BuildPageInner() {
                           {isImporting && importSteps.length > 0 && (
                             <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                               {importSteps.map((step, si) => (
-                                <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: step.status === 'done' ? '#22d79a' : step.status === 'active' ? 'var(--text)' : 'var(--text3)', transition: 'color 0.2s' }}>
+                                <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: step.status === 'done' ? 'var(--text2)' : step.status === 'active' ? 'var(--text)' : 'var(--text3)', transition: 'color 0.2s' }}>
                                   {step.status === 'done'
-                                    ? <CheckCircle size={11} color="#22d79a" />
+                                    ? <CheckCircle size={11} color="var(--text2)" />
                                     : step.status === 'active'
                                       ? <span style={{ width: 11, height: 11, borderRadius: '50%', border: '2px solid var(--blue)', borderTopColor: 'transparent', display: 'inline-block', flexShrink: 0, animation: 'spin 0.7s linear infinite' }} />
                                       : <span style={{ width: 11, height: 11, borderRadius: '50%', border: '2px solid var(--border)', display: 'inline-block', flexShrink: 0 }} />
@@ -939,9 +969,9 @@ function BuildPageInner() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                         {SUGGESTION_CHIPS.map((chip, ci) => (
                           <button key={ci} onClick={() => sendMessage(chip)}
-                            style={{ padding: '5px 11px', borderRadius: 20, fontSize: 11, border: '1px solid rgba(124,111,240,0.25)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', transition: 'all 0.15s' }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(124,111,240,0.5)'; e.currentTarget.style.color = 'var(--blue)'; e.currentTarget.style.background = 'rgba(124,111,240,0.06)' }}
-                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(124,111,240,0.25)'; e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.background = 'transparent' }}
+                            style={{ padding: '5px 11px', borderRadius: 20, fontSize: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', transition: 'all 0.15s' }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-border)'; e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-light)' }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.background = 'transparent' }}
                           >
                             {chip}
                           </button>
@@ -949,53 +979,12 @@ function BuildPageInner() {
                       </div>
                     )}
                   </div>
+                  </div>
                 )}
               </div>
             )
           })}
 
-          {/* ── Test panel ──────────────────────────────────────────── */}
-          {builtAgentId && !streaming && (
-            <div style={{ borderRadius: 12, border: '1px solid rgba(34,215,154,0.25)', background: 'var(--surface)', overflow: 'hidden', marginBottom: 16, boxShadow: '0 2px 12px rgba(34,215,154,0.06)', animation: 'fadeUp 0.2s ease-out both' }}>
-              <div style={{ padding: '9px 14px', borderBottom: '1px solid rgba(34,215,154,0.15)', background: 'rgba(34,215,154,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <CheckCircle size={13} color="#22d79a" />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#22d79a' }}>
-                    {editingAgentId ? 'Changes applied!' : 'Agent built!'}&ensp;
-                  </span>
-                  {builtAgentName && <span style={{ fontSize: 12, color: 'var(--text3)' }}>{builtAgentName}</span>}
-                </div>
-                <button onClick={() => router.push(`/builder/${builtAgentId}`)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', fontSize: 11, cursor: 'pointer', transition: 'all 0.15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'rgba(124,111,240,0.35)' }}
-                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)'; e.currentTarget.style.borderColor = 'var(--border)' }}
-                >
-                  <ExternalLink size={11} /> Open in Builder
-                </button>
-              </div>
-              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', gap: 7 }}>
-                  <input value={testInput} onChange={e => setTestInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') runTest() }}
-                    placeholder="Send a test message to this agent…"
-                    style={{ flex: 1, padding: '8px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.15s' }}
-                    onFocus={e => (e.target.style.borderColor = 'rgba(124,111,240,0.4)')}
-                    onBlur={e => (e.target.style.borderColor = 'var(--border)')}
-                  />
-                  <button onClick={runTest} disabled={!testInput.trim() || testRunning}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 16px', borderRadius: 9, border: 'none', background: !testInput.trim() || testRunning ? 'var(--surface2)' : '#22d79a', color: !testInput.trim() || testRunning ? 'var(--text3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: !testInput.trim() || testRunning ? 'default' : 'pointer', transition: 'background 0.15s' }}>
-                    {testRunning ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={13} />}
-                    Run
-                  </button>
-                </div>
-                {testOutput !== null && (
-                  <div style={{ padding: '10px 12px', borderRadius: 9, background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-wrap', maxHeight: 260, overflowY: 'auto' }}>
-                    {testRunning ? <span style={{ color: 'var(--text3)', fontStyle: 'italic' }}>Running…</span> : testOutput}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Error */}
           {error && (
@@ -1010,12 +999,36 @@ function BuildPageInner() {
       </div>
 
       {/* ── Input bar ───────────────────────────────────────────────────── */}
-      <div style={{ padding: '10px 16px 14px', background: 'var(--surface)', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+      <div style={{ padding: '10px 16px 14px', background: 'var(--bg)', flexShrink: 0 }}>
         <div style={{ maxWidth: 700, margin: '0 auto' }}>
+
+          {/* Suggestion chips — shown only on fresh chat, just above input */}
+          {showStarters && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
+              {[
+                'Research a competitor',
+                'Classify & route emails',
+                'Extract data from emails',
+              ].map((label, i) => (
+                <button key={i} onClick={() => sendMessage(label)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 20,
+                    border: 'none', background: 'var(--surface)',
+                    color: 'var(--text3)', fontSize: 12, fontWeight: 500,
+                    cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.color = 'var(--text2)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface)'; e.currentTarget.style.color = 'var(--text3)' }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {/* File chip */}
           {attachedFile && (
             <div style={{ marginBottom: 7 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 7, background: 'rgba(124,111,240,0.09)', border: '1px solid rgba(124,111,240,0.22)', fontSize: 11, color: 'var(--blue)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 7, background: 'var(--accent-light)', border: '1px solid var(--accent-border)', fontSize: 11, color: 'var(--accent)' }}>
                 <Paperclip size={9} /> {attachedFile.name}
                 <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', padding: 0, display: 'flex', opacity: 0.7, marginLeft: 2 }}>
                   <X size={9} />
@@ -1025,8 +1038,8 @@ function BuildPageInner() {
           )}
 
           {/* Unified pill input */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 0, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 6px 5px 14px', transition: 'border-color 0.15s, box-shadow 0.15s' }}
-            onFocusCapture={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'rgba(124,111,240,0.45)'; el.style.boxShadow = '0 0 0 3px rgba(124,111,240,0.07)' }}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 0, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 6px 5px 14px', transition: 'border-color 0.15s, box-shadow 0.15s' }}
+            onFocusCapture={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--accent-border)'; el.style.boxShadow = '0 0 0 3px var(--accent-light)' }}
             onBlurCapture={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border)'; el.style.boxShadow = 'none' }}
           >
             <textarea ref={textareaRef} value={input}
@@ -1038,15 +1051,25 @@ function BuildPageInner() {
             />
             <input ref={fileInputRef} type="file" accept=".txt,.md,.csv,.json,.xml" style={{ display: 'none' }} onChange={handleFileAttach} />
             <button onClick={() => fileInputRef.current?.click()} title="Attach file"
-              style={{ width: 32, height: 32, borderRadius: 9, border: 'none', background: 'transparent', color: attachedFile ? 'var(--blue)' : 'var(--text3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color 0.15s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--blue)')}
-              onMouseLeave={e => (e.currentTarget.style.color = attachedFile ? 'var(--blue)' : 'var(--text3)')}
+              style={{ width: 32, height: 32, borderRadius: 9, border: 'none', background: 'transparent', color: attachedFile ? 'var(--accent)' : 'var(--text3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color 0.15s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+              onMouseLeave={e => (e.currentTarget.style.color = attachedFile ? 'var(--accent)' : 'var(--text3)')}
             >
               <Paperclip size={13} />
             </button>
             <button onClick={() => sendMessage()} disabled={!input.trim() || streaming}
-              style={{ width: 34, height: 34, borderRadius: 10, border: 'none', flexShrink: 0, background: !input.trim() || streaming ? 'rgba(124,111,240,0.12)' : 'var(--blue)', color: !input.trim() || streaming ? 'rgba(124,111,240,0.4)' : '#fff', cursor: !input.trim() || streaming ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, color 0.15s' }}>
-              <Send size={13} />
+              style={{
+                width: 34, height: 34, borderRadius: 10, border: 'none', flexShrink: 0,
+                background: streaming ? 'var(--surface2)' : input.trim() ? 'var(--primary)' : 'var(--surface2)',
+                color: streaming ? 'var(--text3)' : input.trim() ? 'var(--primary-fg)' : 'var(--text4)',
+                cursor: input.trim() && !streaming ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 0.15s, color 0.15s',
+              }}>
+              {streaming
+                ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }}/>
+                : <Send size={13} />
+              }
             </button>
           </div>
           <p style={{ textAlign: 'center', fontSize: 10, color: 'var(--text3)', marginTop: 5, opacity: 0.7 }}>
@@ -1061,14 +1084,15 @@ function BuildPageInner() {
         @keyframes spin     { to { transform:rotate(360deg) } }
         @keyframes blink    { 0%,100% { opacity:1 } 50% { opacity:0 } }
       `}</style>
+      </div>
     </div>
   )
 }
 
-export default function BuildPage() {
+export default function BuildPage(props: BuildPageProps = {}) {
   return (
     <Suspense fallback={<div style={{ padding: 48, color: 'var(--text3)', fontSize: 14 }}>Loading…</div>}>
-      <BuildPageInner />
+      <BuildPageInner {...props} />
     </Suspense>
   )
 }

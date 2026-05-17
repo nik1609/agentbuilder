@@ -1,39 +1,51 @@
 'use client'
 import { Handle, Position, NodeProps } from '@xyflow/react'
-import { ArrowRightLeft } from 'lucide-react'
+import { Shuffle } from 'lucide-react'
 import { NodeData } from '@/types/agent'
 import NodeIdChip from './NodeIdChip'
 
-const color = '#64b5f6'
+const COLOR = '#64b5f6'
 
 export default function PassthroughNode({ id, data, selected }: NodeProps) {
   const d = data as NodeData
   const template = (d.template as string) ?? ''
   const preview = template.trim()
-    ? template.length > 60 ? template.slice(0, 60) + '…' : template
-    : '{{last_output}}'
+    ? template.slice(0, 60) + (template.length > 60 ? '…' : '')
+    : null
 
   return (
     <div style={{
-      minWidth: 160, maxWidth: 220, borderRadius: 12, overflow: 'visible', cursor: 'grab',
-      background: 'var(--surface2)', border: `1px solid ${color}40`,
-      boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+      minWidth: 190, maxWidth: 250,
+      borderRadius: 12, overflow: 'visible', cursor: 'grab',
+      background: 'var(--bg)',
+      border: `1.5px solid ${selected ? COLOR : 'var(--border)'}`,
+      boxShadow: selected
+        ? `0 0 0 3px ${COLOR}1A, 0 4px 16px rgba(0,0,0,0.1)`
+        : '0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)',
+      transition: 'border-color 0.15s, box-shadow 0.15s',
     }}>
-      <Handle type="target" position={Position.Top} title="Input — receives output from previous node" style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, top: -6 }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px 6px', borderBottom: `1px solid ${color}20` }}>
-        <div style={{ width: 18, height: 18, borderRadius: 5, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <ArrowRightLeft size={9} color={color} />
+      <Handle type="target" position={Position.Top}
+        style={{ width: 10, height: 10, background: 'var(--bg)', border: `2px solid ${COLOR}`, top: -6 }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px 8px', borderBottom: '1px solid var(--border2)', borderRadius: '12px 12px 0 0', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 5, background: `${COLOR}14`, flexShrink: 0 }}>
+          <Shuffle size={10} color={COLOR} />
+          <span style={{ fontSize: 8, fontWeight: 800, color: COLOR, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Transform</span>
         </div>
-        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color }}>I/O</span>
-        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text2)', marginLeft: 2, flex: 1 }}>{d.label}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {d.label}
+        </span>
         <NodeIdChip id={id} />
       </div>
-      <div style={{ padding: '7px 12px 9px' }}>
-        <div style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text3)', lineHeight: 1.4, wordBreak: 'break-all' }}>
-          {preview}
-        </div>
+
+      <div style={{ padding: '6px 12px 9px', borderRadius: '0 0 12px 12px', overflow: 'hidden', background: 'var(--bg)' }}>
+        <p style={{ fontSize: 11, color: preview ? 'var(--text3)' : 'var(--text4)', lineHeight: 1.55, margin: 0, fontFamily: 'monospace', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+          {preview ?? '{{last_output}}'}
+        </p>
       </div>
-      <Handle type="source" position={Position.Bottom} title="Output — passes transformed value to next node" style={{ width: 10, height: 10, background: 'var(--surface)', border: `2px solid ${color}`, bottom: -6 }} />
+
+      <Handle type="source" position={Position.Bottom}
+        style={{ width: 10, height: 10, background: 'var(--bg)', border: `2px solid ${COLOR}`, bottom: -6 }} />
     </div>
   )
 }

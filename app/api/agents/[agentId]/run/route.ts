@@ -16,6 +16,8 @@ import { getUserFromSession, getUserFromApiKey, hashApiKey } from '@/lib/auth'
 import { GuardrailData, AgentRunsHistory } from '@/lib/executor/types'
 import { MemorySource } from '@/types/agent'
 import { estimateCost } from '@/lib/cost'
+import { fireWebhook } from '@/lib/webhook'
+import { generateReviewToken } from '@/lib/review-token'
 import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(
@@ -194,21 +196,39 @@ export async function POST(
   let input: Record<string, unknown> = {}
   try { input = await req.json() } catch { input = {} }
 
-  // ── 8. Apply conversation history (chat mode) to message ─────────────────
+  // Extract callbackUrl + webhookSecret — stored with run, stripped from workflow input
+  const callbackUrl = typeof input.callbackUrl === 'string' ? input.callbackUrl.trim() : undefined
+  const webhookSecret = typeof input.webhookSecret === 'string' ? input.webhookSecret.trim() : undefined
+  if (callbackUrl) delete input.callbackUrl
+  if (webhookSecret) delete input.webhookSecret
+
+  // ── 8. Apply conversation history to message for execution ──────────────
+  // Keep the original message for DB storage (so chat history stays clean).
+  // Only the execution input gets the history prepended.
+  const originalMessage = input.message as string | undefined
   const conversationHistory = input.conversationHistory as Array<{ role: string; content: string }> | undefined
-  if (conversationHistory && conversationHistory.length > 0 && input.message) {
+  delete input.conversationHistory // strip from stored input
+  let execInput = { ...input }
+  if (conversationHistory && conversationHistory.length > 0 && originalMessage) {
     const historyText = conversationHistory
       .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
       .join('\n')
-    input = { ...input, message: `Previous conversation:\n${historyText}\n\nCurrent message: ${input.message}` }
+    execInput = { ...input, message: `Previous conversation:\n${historyText}\n\nCurrent message: ${originalMessage}` }
   }
 
   // ── 9. Create run record ──────────────────────────────────────────────────
+  // Store callbackUrl + webhookSecret alongside input (prefixed _ so workflow ignores them)
+  const runInput = {
+    ...input,
+    ...(callbackUrl    && { _callbackUrl:    callbackUrl }),
+    ...(webhookSecret  && { _webhookSecret:  webhookSecret }),
+  }
+
   const { error: insertError } = await db.from('agent_runs').insert({
     id: runId, agent_id: agentId, agent_name: agent.name,
     api_key_id: keyRecord?.id ?? null,
     api_key_prefix: keyRecord?.key_prefix ?? (isTestMode ? 'test' : null),
-    input, status: 'running', trace: [], created_at: new Date().toISOString(),
+    input: runInput, status: 'running', trace: [], created_at: new Date().toISOString(),
     user_id: effectiveUserId ?? null,
   })
   if (insertError) {
@@ -223,7 +243,7 @@ export async function POST(
 
   let result
   try {
-    result = await executeAgent(schema as never, input, agentId, runId, undefined, undefined, modelConfigs, guardrailMap, agentRunsHistory, datatableImportData, datatableWriter)
+    result = await executeAgent(schema as never, execInput, agentId, runId, undefined, undefined, modelConfigs, guardrailMap, agentRunsHistory, datatableImportData, datatableWriter)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     await db.from('agent_runs').update({ status: 'failed', error: msg, latency_ms: Date.now() - startTime, trace: [] }).eq('id', runId)
@@ -247,20 +267,29 @@ export async function POST(
   }
   await db.from('agents').update({ run_count: (agent.run_count ?? 0) + 1 }).eq('id', agentId)
 
+  const baseUrl = req.headers.get('origin')
+    ?? (req.headers.get('x-forwarded-proto') && req.headers.get('host')
+      ? `${req.headers.get('x-forwarded-proto')}://${req.headers.get('host')}`
+      : '')
   const hitlUrls = result.status === 'waiting_hitl' ? {
-    approveUrl: `/api/runs/${runId}/hitl/approve`,
-    rejectUrl: `/api/runs/${runId}/hitl/reject`,
-    messagesUrl: `/api/runs/${runId}/hitl`,
-    resumeUrl: `/api/runs/${runId}/resume`,
+    reviewUrl: `${baseUrl}/review/${generateReviewToken(runId)}`,
+    resumeUrl: `${baseUrl}/api/runs/${runId}/resume`,
   } : undefined
 
-  return NextResponse.json({
+  const responseBody = {
     runId, agentId, agentName: agent.name,
     output: result.output, status: result.status,
     tokens: result.tokens, latencyMs: result.latencyMs,
     trace: result.trace, error: result.error ?? null,
     ...(hitlUrls && { hitlUrls }),
-  })
+  }
+
+  // Fire signed webhook for completed/failed runs — waiting_hitl fires after resume
+  if (callbackUrl && result.status !== 'waiting_hitl' && result.status !== 'waiting_clarify') {
+    void fireWebhook(callbackUrl, responseBody, webhookSecret)
+  }
+
+  return NextResponse.json(responseBody)
 }
 
 // ── SSE Streaming ─────────────────────────────────────────────────────────────
@@ -414,7 +443,10 @@ export async function GET(
       // For HITL/Clarify: send pause event; do NOT send done so the client blocks until resumed
       if (result.status === 'waiting_hitl') {
         const hitlOutput = result.output as { checkpoint?: string; partial?: unknown } | null
+        const sseBase = req.headers.get('origin') ?? ''
+        const reviewUrl = sseBase ? `${sseBase}/review/${generateReviewToken(runId)}` : undefined
         send({ type: 'hitl_pause', runId, checkpoint: hitlOutput?.checkpoint, partial: hitlOutput?.partial,
+          reviewUrl,
           message: 'Agent paused — POST to /api/runs/' + runId + '/resume to continue' })
       } else if (result.status === 'waiting_clarify') {
         const clarifyOutput = result.output as { question?: string; checkpoint?: string; partial?: unknown } | null

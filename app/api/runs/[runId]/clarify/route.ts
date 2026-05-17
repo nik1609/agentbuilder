@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { getUserId } from '@/lib/auth'
 import { executeAgent } from '@/lib/executor/dag-executor'
 import { v4 as uuidv4 } from 'uuid'
+import { fireWebhook } from '@/lib/webhook'
 
 export async function POST(
   req: NextRequest,
@@ -107,5 +108,13 @@ export async function POST(
     trace: [...trace, ...result.trace],
   }).eq('id', runId)
 
-  return NextResponse.json({ runId, agentId: run.agent_id, output: result.output, status: result.status, tokens: (run.tokens ?? 0) + result.tokens, error: result.error ?? null })
+  const responseBody = { runId, agentId: run.agent_id, output: result.output, status: result.status, tokens: (run.tokens ?? 0) + result.tokens, error: result.error ?? null }
+
+  const runInput = run.input as Record<string, unknown> | null
+  const cbUrl = runInput?._callbackUrl; const cbSecret = runInput?._webhookSecret
+  if (typeof cbUrl === 'string' && cbUrl && result.status !== 'waiting_clarify' && result.status !== 'waiting_hitl') {
+    void fireWebhook(cbUrl, responseBody, typeof cbSecret === 'string' ? cbSecret : undefined)
+  }
+
+  return NextResponse.json(responseBody)
 }

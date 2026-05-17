@@ -549,11 +549,13 @@ async function executeToolNode(node: AgentNode, ctx: ExecutionContext): Promise<
 async function executeLLMNode(node: AgentNode, ctx: ExecutionContext, userMessage: string): Promise<NodeResult> {
   const modelKey = node.data.model as string | undefined
   const cfg = modelKey ? ctx.modelConfigs?.[modelKey] : undefined
+  const rawSystemPrompt = node.data.systemPrompt as string | undefined
+  const resolvedSystemPrompt = rawSystemPrompt ? resolveVars(rawSystemPrompt, ctx) : undefined
   const { text, tokens } = await callLLM({
     provider: cfg?.provider ?? 'google',
     model: cfg?.modelId ?? modelKey ?? 'gemini-2.5-flash',
     apiKey: cfg?.apiKey, baseUrl: cfg?.baseUrl,
-    systemPrompt: node.data.systemPrompt as string | undefined,
+    systemPrompt: resolvedSystemPrompt,
     userMessage,
     temperature: cfg?.temperature ?? (node.data.temperature as number | undefined) ?? 0.7,
     maxTokens: cfg?.maxTokens ?? (node.data.maxTokens as number | undefined) ?? 4096,
@@ -567,12 +569,15 @@ async function executeAgenticLLMNode(
   node: AgentNode,
   ctx: ExecutionContext,
   userMessage: string,
-  emit: (e: Omit<TraceEvent, 'ts'>) => void
+  emit: (e: Omit<TraceEvent, 'ts'>) => void,
+  schemaToolNodes: AgentNode[] = []
 ): Promise<NodeResult> {
   const modelKey = node.data.model as string | undefined
   const cfg = modelKey ? ctx.modelConfigs?.[modelKey] : undefined
   const maxIter = (node.data.maxToolIterations as number | undefined) ?? 10
   const boundTools = (node.data.boundTools as string[] | undefined) ?? []
+  const rawSystemPrompt = node.data.systemPrompt as string | undefined
+  const resolvedSystemPrompt = rawSystemPrompt ? resolveVars(rawSystemPrompt, ctx) : undefined
 
   const toolsCtx = boundTools.length
     ? `\n\nAvailable tools: ${boundTools.join(', ')}\n\nTo call a tool respond with exactly:\nTOOL_CALL: <tool_name>\nINPUT: <input value>\n\nOtherwise respond normally.`
@@ -586,7 +591,7 @@ async function executeAgenticLLMNode(
       provider: cfg?.provider ?? 'google',
       model: cfg?.modelId ?? modelKey ?? 'gemini-2.5-flash',
       apiKey: cfg?.apiKey, baseUrl: cfg?.baseUrl,
-      systemPrompt: node.data.systemPrompt as string | undefined,
+      systemPrompt: resolvedSystemPrompt,
       userMessage: history.join('\n\n---\n\n'),
       temperature: cfg?.temperature ?? 0.7,
       maxTokens: cfg?.maxTokens ?? 4096,
@@ -601,7 +606,6 @@ async function executeAgenticLLMNode(
     emit({ type: 'agentic_tool_call', nodeId: node.id, message: `Tool call: ${toolName}`, data: { tool: toolName, input: toolInput } })
 
     let toolResult = `[Tool ${toolName} not available in agentic context]`
-    // Attempt to execute if it's a web_search tool
     if (toolName === 'web_search' || toolName.includes('search')) {
       try { toolResult = await executeWebSearch(toolInput, {}) } catch (e) {
         toolResult = `Search error: ${e instanceof Error ? e.message : String(e)}`
@@ -611,6 +615,25 @@ async function executeAgenticLLMNode(
         const r = await fetch(`https://r.jina.ai/${toolInput}`, { headers: { Accept: 'text/plain' }, signal: AbortSignal.timeout(15000) })
         toolResult = await r.text()
       } catch (e) { toolResult = `Scrape error: ${e instanceof Error ? e.message : String(e)}` }
+    } else {
+      // Look up a bound custom tool node from the schema.
+      // toolInput (what the AI wrote after INPUT:) becomes __last_output for the tool call.
+      // We use a shallow context copy so the parent ctx is never mutated.
+      const toolNode = schemaToolNodes.find(n =>
+        String(n.data.toolName ?? '').toLowerCase() === toolName.toLowerCase()
+      )
+      if (toolNode) {
+        try {
+          const toolCtx: ExecutionContext = {
+            ...ctx,
+            variables: { ...ctx.variables, __last_output: toolInput },
+          }
+          const res = await executeToolNode(toolNode, toolCtx)
+          toolResult = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
+        } catch (e) {
+          toolResult = `Tool "${toolName}" error: ${e instanceof Error ? e.message : String(e)}`
+        }
+      }
     }
 
     emit({ type: 'agentic_tool_result', nodeId: node.id, message: `Tool result: ${toolName}`, data: { tool: toolName, result: String(toolResult).slice(0, 500) } })
@@ -662,18 +685,21 @@ async function executeSwitchNode(
   } else if (switchType === 'llm_classify') {
     const modelKey = node.data.model as string | undefined
     const cfg = modelKey ? ctx.modelConfigs?.[modelKey] : Object.values(ctx.modelConfigs ?? {})[0]
-    const labels = cases.map(c => c.label).join(', ')
+    // For each case, use match as the category keyword if set, else fall back to label
+    const caseKeywords = cases.map(c => ({ label: c.label, keyword: (c.match?.trim() || c.label) }))
+    const labels = caseKeywords.map(c => c.keyword).join(', ')
     const { text } = await callLLM({
       provider: (cfg?.provider ?? 'google') as Parameters<typeof callLLM>[0]['provider'],
       model: cfg?.modelId, apiKey: cfg?.apiKey, baseUrl: cfg?.baseUrl,
       systemPrompt: `Classify the input into one of: ${labels}. Reply with ONLY the category name.`,
       userMessage: String(currentOutput ?? ''), temperature: 0, maxTokens: 20,
     })
-    const classified = text.trim()
-    const edge = outEdges.find(e =>
-      e.label === classified ||
-      cases.some(c => c.label === (e.label ?? e.sourceHandle) && classified.toLowerCase().includes(c.label.toLowerCase()))
-    )
+    const classified = text.trim().toLowerCase()
+    const edge = outEdges.find(e => {
+      const ck = caseKeywords.find(c => c.label === (e.label ?? e.sourceHandle))
+      if (!ck) return false
+      return classified === ck.keyword.toLowerCase() || classified.includes(ck.keyword.toLowerCase())
+    })
     if (edge) return { output: currentOutput, nextNodeId: edge.target }
   }
 
@@ -684,7 +710,7 @@ async function executeSwitchNode(
 
 // ─── Loop exit condition check ─────────────────────────────────────────────────
 async function shouldExitLoop(node: AgentNode, ctx: ExecutionContext): Promise<boolean> {
-  const maxIter = (node.data.maxIterations as number | undefined) ?? 10
+  const maxIter = (node.data.maxIterations as number | undefined) ?? 5
   const count = ctx.loopCounters?.[node.id] ?? 0
   if (count >= maxIter) {
     if ((node.data.onMaxReached as string) === 'error')
@@ -752,14 +778,15 @@ async function executeBranchGraph(
   edges: AgentEdge[],
   ctx: ExecutionContext,
   branchInput: unknown,
-  emit: (e: Omit<TraceEvent, 'ts'>) => void
-): Promise<unknown> {
-  // Mini execution context inheriting from parent
+  emit: (e: Omit<TraceEvent, 'ts'>) => void,
+  allNodes: AgentNode[]
+): Promise<{ output: unknown; tokens: number }> {
   const branchCtx: ExecutionContext = {
     ...ctx,
     variables: { ...ctx.variables, __last_output: branchInput },
     nodeOutputs: { ...ctx.nodeOutputs },
   }
+  let branchTokens = 0
 
   for (const node of branchNodes) {
     emit({ type: 'node_start', nodeId: node.id, message: `[branch] ${node.data.label} started` })
@@ -771,7 +798,38 @@ async function executeBranchGraph(
           ? branchCtx.variables.__last_output
           : JSON.stringify(branchCtx.variables.__last_output ?? branchCtx.input)
         const mem = buildMemoryContext((node.data.memorySources as MemorySource[] | undefined) ?? [], branchCtx)
-        result = await withRetry(() => executeLLMNode(node, branchCtx, mem + raw), node, emit)
+        const userMessage = mem + raw
+
+        // Guardrail — input check
+        const guardrailId = node.data.guardrailId as string | undefined
+        const guardrail = guardrailId ? ctx.guardrailMap?.[guardrailId] : undefined
+        if (guardrail) {
+          const violated = checkRules(guardrail.inputRules, userMessage)
+          if (violated) {
+            emit({ type: 'guardrail_block', nodeId: node.id, message: `Guardrail blocked: "${violated}"`, data: { rule: violated } })
+            throw new Error(`Guardrail blocked input: rule "${violated}" was violated.`)
+          }
+        }
+
+        if (node.data.agenticMode) {
+          const boundToolNames = (node.data.boundTools as string[] | undefined) ?? []
+          const schemaToolNodes = allNodes.filter(n =>
+            n.data.nodeType === 'tool' && boundToolNames.includes(String(n.data.toolName ?? ''))
+          )
+          result = await withRetry(() => executeAgenticLLMNode(node, branchCtx, userMessage, emit, schemaToolNodes), node, emit)
+        } else {
+          result = await withRetry(() => executeLLMNode(node, branchCtx, userMessage), node, emit)
+        }
+
+        // Guardrail — output check
+        if (guardrail && result.output) {
+          const outputText = typeof result.output === 'string' ? result.output : JSON.stringify(result.output)
+          const violated = checkRules(guardrail.outputRules, outputText)
+          if (violated) {
+            emit({ type: 'guardrail_block', nodeId: node.id, message: `Guardrail blocked output: "${violated}"`, data: { rule: violated } })
+            result = { output: `[Output blocked by guardrail: "${violated}"]` }
+          }
+        }
         break
       }
       case 'tool':
@@ -786,13 +844,14 @@ async function executeBranchGraph(
         result = { output: branchCtx.variables.__last_output }
     }
 
+    branchTokens += result.tokens ?? 0
     branchCtx.variables.__last_output = result.output
     branchCtx.variables[node.id] = result.output
     if (branchCtx.nodeOutputs) branchCtx.nodeOutputs[node.id] = result.output
-    emit({ type: 'node_done', nodeId: node.id, message: `[branch] ${node.data.label} completed` })
+    emit({ type: 'node_done', nodeId: node.id, message: `[branch] ${node.data.label} completed`, data: { tokens: result.tokens } })
   }
 
-  return branchCtx.variables.__last_output
+  return { output: branchCtx.variables.__last_output, tokens: branchTokens }
 }
 
 // ─── Main export types ────────────────────────────────────────────────────────
@@ -801,6 +860,7 @@ export interface ResumeOptions {
   partialOutput: unknown
   feedback?: string
   clarifyAnswer?: string
+  action?: 'approve' | 'revise'
 }
 
 // ─── Main executor ────────────────────────────────────────────────────────────
@@ -827,12 +887,18 @@ export async function executeAgent(
   const inputDefault = inputNode?.data?.inputDefault as string | undefined
   const rawInputValue = input[inputField] ?? inputDefault ?? input.message ?? input
 
+  const partialStr = resume?.partialOutput != null
+    ? (typeof resume.partialOutput === 'string' ? resume.partialOutput : JSON.stringify(resume.partialOutput))
+    : ''
+
   const seedOutput = resume
-    ? (resume.clarifyAnswer
-      ? `User answered: "${resume.clarifyAnswer}"\n\nPrevious context:\n${JSON.stringify(resume.partialOutput)}`
+    ? resume.clarifyAnswer
+      ? `User answered: "${resume.clarifyAnswer}"\n\nPrevious context:\n${partialStr}`
+      : resume.action === 'revise' && resume.feedback
+      ? `Revision requested: "${resume.feedback}"\n\nPrevious draft to revise:\n${partialStr}`
       : resume.feedback
-      ? `Reviewer approved with notes: "${resume.feedback}"\n\nPrevious context:\n${JSON.stringify(resume.partialOutput)}`
-      : resume.partialOutput)
+      ? `Approved with reviewer notes: "${resume.feedback}"\n\nOutput to finalize:\n${partialStr}`
+      : resume.partialOutput
     : rawInputValue
 
   const ctx: ExecutionContext = {
@@ -844,7 +910,7 @@ export async function executeAgent(
     // Pre-populate input node so {{nodeId}} templates resolve correctly
     nodeOutputs: { ...(inputNode ? { [inputNode.id]: rawInputValue } : {}) },
     agentRunsHistory, datatableImportData, datatableWriter,
-    loopCounters: {}, branchResults: {},
+    loopCounters: {}, branchResults: {}, branchLabels: {},
   }
 
   const emit = (event: Omit<TraceEvent, 'ts'>) => {
@@ -1037,8 +1103,19 @@ User message: "${userMsg}"`
 
       // Resume after HITL checkpoint
       if (skipUntilAfter) {
-        if (node.id === skipUntilAfter) skipUntilAfter = null
-        i++; continue
+        if (node.id === skipUntilAfter) {
+          skipUntilAfter = null
+          if (resume?.action !== 'revise') {
+            // Close the orphaned node_start so the trace doesn't show a ghost pending step
+            const doneMsg = resume?.clarifyAnswer ? `${node.data.label} answered` : `${node.data.label} approved`
+            emit({ type: 'node_done', nodeId: node.id, message: doneMsg,
+              data: { nodeType: node.data.nodeType, label: node.data.label, output: doneMsg } })
+            i++; continue
+          }
+          // For revise: fall through and re-execute this node
+        } else {
+          i++; continue
+        }
       }
 
       // Skip nodes in non-selected condition/switch branches
@@ -1066,7 +1143,7 @@ User message: "${userMsg}"`
           ctx.loopCounters[node.id] = (ctx.loopCounters[node.id] ?? 0) + 1
           loopIndices.set(node.id, i)
           const iterCount = ctx.loopCounters[node.id]
-          emit({ type: 'loop_iteration', nodeId: node.id, message: `Loop "${node.data.label}" iteration ${iterCount}`, data: { iteration: iterCount, max: node.data.maxIterations ?? 10 } })
+          emit({ type: 'loop_iteration', nodeId: node.id, message: `Loop "${node.data.label}" iteration ${iterCount}`, data: { iteration: iterCount, max: node.data.maxIterations ?? 5 } })
           // Loop node passes through current output
           result = { output: ctx.variables.__last_output }
           break
@@ -1090,6 +1167,10 @@ User message: "${userMsg}"`
             splitInputs = lastOutput
           }
 
+          // Build branchId → label map from node.data.branches (keyed by UUID, not index)
+          const branchDefs = (node.data.branches as { id: string; label: string }[]) ?? []
+          const branchLabelMap = Object.fromEntries(branchDefs.map(b => [b.id, b.label]))
+
           // Execute branches in parallel
           const branchResults = await Promise.all(
             forkOutEdges.map(async (edge, idx) => {
@@ -1098,15 +1179,20 @@ User message: "${userMsg}"`
               const branchNodeList = sorted.filter(n => branchNodeSet.has(n.id))
               const branchInput = inputMode === 'split' ? (splitInputs[idx] ?? lastOutput) : lastOutput
 
-              const branchOutput = await executeBranchGraph(branchNodeList, edges, ctx, branchInput, emit)
-              return { branchId, output: branchOutput }
+              const { output, tokens } = await executeBranchGraph(branchNodeList, edges, ctx, branchInput, emit, nodes)
+              return { branchId, label: branchLabelMap[branchId] ?? `Branch ${idx + 1}`, output, tokens }
             })
           )
 
-          // Store results for Join to consume
+          // Accumulate branch token usage into run total
+          totalTokens += branchResults.reduce((sum, r) => sum + r.tokens, 0)
+
+          // Store results + labels for Join to consume — keyed by branchId so order doesn't matter
           if (!ctx.branchResults) ctx.branchResults = {}
-          for (const { branchId, output } of branchResults) {
+          if (!ctx.branchLabels)  ctx.branchLabels  = {}
+          for (const { branchId, label, output } of branchResults) {
             ctx.branchResults[branchId] = output
+            ctx.branchLabels[branchId]  = label
           }
 
           // Mark all branch nodes as visited
@@ -1132,22 +1218,20 @@ User message: "${userMsg}"`
           if (mergeFormat === 'concatenated') {
             merged = branchValues.map(v => (typeof v === 'string' ? v : JSON.stringify(v))).join('\n\n')
           } else if (mergeFormat === 'object') {
-            const forkNode = nodes.find(n => n.data.nodeType === 'fork')
-            const branchDefs = (forkNode?.data?.branches as { id: string; label: string }[]) ?? []
             const obj: Record<string, unknown> = {}
-            const branchIds = Object.keys(ctx.branchResults ?? {})
-            branchIds.forEach((id, idx) => {
-              const label = branchDefs[idx]?.label ?? id
-              obj[label] = (ctx.branchResults ?? {})[id]
-            })
+            for (const [id, output] of Object.entries(ctx.branchResults ?? {})) {
+              const label = ctx.branchLabels?.[id] ?? id
+              obj[label] = output
+            }
             merged = obj
           } else {
             merged = branchValues // array (default)
           }
 
           if (mergeAs) ctx.variables[mergeAs] = merged
-          // Clear branch results after consuming
+          // Clear branch results + labels after consuming
           ctx.branchResults = {}
+          ctx.branchLabels  = {}
 
           emit({ type: 'join_done', nodeId: node.id, message: `Join "${node.data.label}" merged ${branchValues.length} branches`, data: { format: mergeFormat, count: branchValues.length } })
           result = { output: merged }
@@ -1159,11 +1243,14 @@ User message: "${userMsg}"`
           const switchResult = await executeSwitchNode(node, ctx, edges)
           if (switchResult.nextNodeId) {
             routeToNodeId = switchResult.nextNodeId
-            // Mark all other branch starts as skipped (to avoid executing non-selected branches)
             const switchOutEdges = edges.filter(e => e.source === node.id)
+            const allBranchStarts = switchOutEdges.map(e => e.target)
+            // Find where all branches converge so we don't skip shared downstream nodes
+            const convergence = findConvergenceNode(allBranchStarts, edges, nodes, sorted)
             for (const e of switchOutEdges) {
               if (e.target !== switchResult.nextNodeId) {
-                collectBranchNodes(e.target, switchResult.nextNodeId, nodes, edges).forEach(id => skipNodes.add(id))
+                const stopAt = convergence ?? '__never__'
+                collectBranchNodes(e.target, stopAt, nodes, edges).forEach(id => skipNodes.add(id))
               }
             }
           }
@@ -1198,8 +1285,13 @@ User message: "${userMsg}"`
           emit({ type: 'llm_call', nodeId: node.id, message: `Calling ${cfg?.modelId ?? modelKey ?? 'gemini-2.5-flash'}`, data: { model: cfg?.modelId ?? modelKey ?? 'gemini-2.5-flash', systemPrompt: node.data.systemPrompt, input: userMessage.slice(0, 300) } })
 
           if (node.data.agenticMode) {
+            const boundToolNames = (node.data.boundTools as string[] | undefined) ?? []
+            const schemaToolNodes = nodes.filter(n =>
+              n.data.nodeType === 'tool' &&
+              boundToolNames.includes(String(n.data.toolName ?? ''))
+            )
             result = await withRetry(
-              () => executeAgenticLLMNode(node, ctx, userMessage, emit),
+              () => executeAgenticLLMNode(node, ctx, userMessage, emit, schemaToolNodes),
               node, emit
             )
           } else {
@@ -1297,7 +1389,16 @@ User message: "${userMsg}"`
               temperature: 0.7, maxTokens: 200,
             })
             totalTokens += clarifyTokens ?? 0
-            question = q.trim()
+            // Extract just the question — some reasoning models include preamble before the actual question
+            const raw = q.trim()
+            const questionLines = raw.split('\n').map(l => l.trim()).filter(l => l.endsWith('?'))
+            if (questionLines.length > 0) {
+              question = questionLines[questionLines.length - 1].replace(/^["'"'"'\-\*\d\.\s]+|["'"'"']+$/g, '').trim()
+            } else {
+              // No '?' found — find last quoted string or use full response
+              const quoted = raw.match(/["'"'"']([^"'"'"']{10,}["'"'"'])/g)
+              question = quoted ? quoted[quoted.length - 1].replace(/^["'"'"']|["'"'"']$/g, '').trim() : raw
+            }
           }
 
           emit({ type: 'clarify_pause', nodeId: node.id, message: `Clarify checkpoint — waiting for user answer` })
