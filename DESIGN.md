@@ -538,12 +538,24 @@ Easing: ease (default), ease-out (exits), ease-in-out (transforms)
 
 ---
 
+## HARD RULE: No Em Dashes — Ever
+
+**Never use `—` (em dash) anywhere in UI copy, labels, hints, tooltips, or strings.**
+
+Use instead: period `.`, colon `:`, comma `,`, or middle dot `·`.
+
+The only acceptable dash is a regular hyphen `-` inside compound words (`drag-and-drop`, `built-in`, `production-grade`).
+
+This rule applies to every file in the repo. If you see `—` in a string, replace it.
+
+---
+
 ## Do's and Don'ts
 
 ### Do
-- Use whitespace generously — 48px page padding, 40px section gaps
+- Use whitespace generously. 48px page padding, 40px section gaps.
 - Use `--text3` for all metadata, timestamps, IDs
-- Keep status colors semantic — green = good, red = bad, amber = attention
+- Keep status colors semantic: green = good, red = bad, amber = attention
 - Dark cards only inside the canvas or explicitly technical contexts (code blocks, API examples)
 - One primary action per page/modal
 
@@ -555,7 +567,7 @@ Easing: ease (default), ease-out (exits), ease-in-out (transforms)
 - Use `font-weight: 400` for anything smaller than 14px, use 500 minimum
 - Use borders heavier than 1px anywhere
 - Add `box-shadow` with color tint (no `rgba(124,111,240,0.4)` style glows)
-- **Use em dashes (`—`) anywhere in UI copy** — this is a hard rule. Use a period, a colon, a comma, or `·` (middle dot) instead. Em dashes look unprofessional in technical UI and cause text rendering inconsistencies across platforms.
+- **Use em dashes (`—`) anywhere. Hard rule. No exceptions.**
 
 ### Typography punctuation rules
 
@@ -572,11 +584,15 @@ The only acceptable dash character in UI copy is the regular hyphen (`-`) inside
 
 ## Landing Page Specifics
 
-The landing page (`app/page.tsx`) is the **one exception** where:
-- Dark background (`--dark-bg`) is used for the full page
-- Gradients are allowed for hero headline text
-- Glow effects on the primary CTA button are allowed (max 1)
-- The rest of the site (dashboard, auth, docs) is **always light**
+**UPDATED — see "Current Implementation State" section below for authoritative details.**
+
+The landing page is dual-theme (user toggleable, defaults to OS preference). The old "always dark" rule no longer applies.
+
+What remains true:
+- Gradients are allowed on the primary CTA button glow (`box-shadow` only)
+- Code blocks and the DAG WorkflowPanel are always dark regardless of theme
+- The dashboard, auth pages, and docs are always light (no toggle there)
+- The Why AgentHub section follows the theme toggle (was previously hardcoded dark)
 
 ---
 
@@ -720,14 +736,17 @@ const playfair = Playfair_Display({
 
 #### When to use Playfair Display
 
+**UPDATED:** Playfair Display is now used for ALL major landing page section H2 headings, creating consistent editorial rhythm throughout. The old "hero only" rule no longer applies to the landing page.
+
 | Use | Don't use |
 |---|---|
 | Landing page hero H1 | Dashboard headings |
-| Featured article title | Nav items |
-| Section pull-quotes | Buttons |
-| Editorial "eyebrow + big title" pairs | Any UI chrome |
+| ALL major section H2s on landing | Nav items |
+| Section pull-quotes and "shallow" emphasis | Buttons |
+| Footer "Ready to build" headline | Any UI chrome |
+| The italic `<em>` inside headings for tonal shift | Subheadings / H3 |
 
-The rule: **Playfair is for reading, Inter is for using.**
+The rule: **Playfair is for reading, Inter is for using.** On the landing page, every section heading reads — so all section headings use Playfair.
 
 #### Editorial Type Scale (Dark / Landing)
 
@@ -1231,3 +1250,339 @@ Center RefreshCw icon: color #9B9B9B
 Arrows: color #9B9B9B
 Hover: border rgba(0,0,0,0.15), background #E5E5E5
 ```
+
+---
+
+# Current Implementation State (as of May 2026)
+
+> Everything below reflects actual decisions made and shipped in `app/page.tsx`. When the sections above contradict this section, **this section wins** — it is the authoritative current state.
+
+---
+
+## Theme System (Landing Page)
+
+The landing page supports two themes toggled by the user. The dashboard is always light.
+
+### How it works
+- **First visit:** reads `window.matchMedia('(prefers-color-scheme: dark)')` — matches the OS
+- **Subsequent visits:** reads `localStorage.getItem('agenthub-landing-dark')` (set by toggle)
+- **Toggle button:** Moon/Sun icon in the nav, same button style as "Why?" and "Contact us"
+- **What changes:** page background, surfaces, text, borders, buttons, nav, cards
+- **What stays dark regardless of theme:** code blocks, the DAG WorkflowPanel, auth modal
+
+### Dark mode tokens (in code: `DARK_T`)
+```
+pageBg:    #050505     navBg: rgba(5,5,5,0.92)
+surface:   #0B0B0B     surface2: #111111     surface3: #171717
+border:    rgba(255,255,255,0.08)             borderHi: rgba(255,255,255,0.15)
+text:      #FFFFFF     text2: #A1A1AA         text3: #71717A
+btnBg:     #FFFFFF     btnText: #000000  (white button on dark bg)
+accentLt:  #60A5FA
+```
+
+### Light mode tokens (in code: `LIGHT_T`)
+```
+pageBg:    #FFFFFF     navBg: rgba(255,255,255,0.92)
+surface:   #F7F7F8     surface2: #EFEFEF     surface3: #E5E5E5
+border:    rgba(0,0,0,0.08)                  borderHi: rgba(0,0,0,0.15)
+text:      #0D0D0D     text2: #6B6B6B        text3: #9B9B9B
+btnBg:     #000000     btnText: #FFFFFF  (black button on light bg)
+accentLt:  #2563EB
+```
+
+### Surfaces that are ALWAYS dark (never change with toggle)
+- DAG WorkflowPanel (the hero right panel)
+- Code block tabs (JavaScript / Python / cURL section)
+- Auth modal background
+- Node color dots and handles inside the DAG SVG
+
+---
+
+## Landing Page — Nav Structure
+
+```
+[⚡ AgentHub / BUILT FOR ENGINEERS WHO SHIP]
+                                 [Moon/Sun] [Why?] [Contact us] | [Sign in] [Get started]
+```
+
+- **Why?** — anchor link to `#lp-why`, styled as a button (same `secBg`/`secBorder` as Sign in)
+- **Contact us** — anchor link to `#lp-contact`, same button styling
+- **Divider** — `1px` vertical separator between Contact us and Sign in
+- **Sign in** — opens the sign-in modal (NOT a navigation to /login)
+- **Get started** — opens the sign-up modal
+- **Login page (`/login`)** — permanently redirects to `/`. Sign-in is modal-only.
+- **Height:** 64px with `backdrop-filter: blur(20px)`
+- **Scroll margin:** all `[id]` sections have `scroll-margin-top: 80px` to account for sticky nav
+
+---
+
+## Landing Page — Section Order
+
+```
+1. Nav (sticky)
+2. Hero (2-column: copy left, DAG panel right)
+3. Provider marquee (animated, loops continuously)
+4. Features (editorial card grid with colored icons)
+5. Code/API section (tabbed: JS / Python / cURL, always dark)
+6. How it works + Contact form (2-column, numbered steps left, form right)
+7. Observability (2-column: stat cards left, copy right)
+8. Why AgentHub (2-column: Playfair quote left, 4 principles right)
+9. Founder section (footer)
+```
+
+**Removed sections:** tag bar (replaced by feature chips below heading), standalone CTA section, separate contact section, node types section.
+
+---
+
+## Playfair Display — Expanded Usage
+
+Playfair Display is used for ALL major section H2 headings on the landing page, not just the hero. This creates consistent editorial rhythm throughout the page.
+
+### Sections that use Playfair Display
+| Section | Heading |
+|---|---|
+| Hero H1 | "Build AI agents visually. Deploy as REST APIs." |
+| Features H2 | "Every building block for serious AI systems." |
+| Code section H2 | "Build your agent once. Call it from any system." |
+| How it works H2 | "Three steps from idea to running API." |
+| Contact H2 | "Have a question or feature request?" |
+| Observability H2 | "Every run is logged. Nothing is a black box." |
+| Why section H2 | "Most AI tooling today is shallow." |
+| CTA / Footer | "Ready to build your first agent?" |
+
+The `em` tag inside headings renders in italic Playfair, used for the "shallow" emphasis and similar tonal shifts.
+
+---
+
+## Hero Section — CTAs
+
+The hero has **one primary button** and **one secondary button**, not two primaries:
+
+```
+[View Docs]     [Contact Us]
+  black bg         outlined
+  /docs            #lp-contact
+```
+
+The nav already has "Get started" and "Sign in" — no need to duplicate them in the hero. The hero buttons serve discovery (docs) and conversion (contact).
+
+**Live badges below the description:**
+- Green sonar dot + "Build via Chat · now live"
+- Neutral chip: "Multi-agent systems · built in"
+
+Note: Multi-agent Systems (MAS) is already built in — every pipeline IS a multi-agent system since each node runs independently with its own LLM. Do NOT describe MAS as "coming soon".
+
+---
+
+## Feature Cards — Colored Icons
+
+Feature cards use node-type accent colors for their icons and icon backgrounds. This creates visual connection between the marketing page and the product.
+
+| Feature | Icon | Color |
+|---|---|---|
+| Visual DAG Builder | `Code2` | `#7C3AED` (LLM purple) |
+| Instant REST API | `Globe` | `#2563EB` (accent blue) |
+| Any LLM Provider | `Cpu` | `#0891B2` (Tool cyan) |
+| Conditional Routing | `GitBranch` | `#16A34A` (Condition green) |
+| Loops + Parallel | `RefreshCw` | `#EA580C` (Loop orange) |
+| Human-in-the-Loop | `UserCheck` | `#DB2777` (HITL pink) |
+| Guardrails | `Shield` | `#9333EA` (Fork/Join violet) |
+
+On hover: card lifts `translateY(-4 to -5px)`, shadow uses the card's accent color at low opacity.
+
+---
+
+## Sonar Dot — Animation Pattern
+
+Used for live indicators ("Live", "Executing", "Build via Chat · now live", "All systems operational"), and for the eyebrow green dot on the hero.
+
+```tsx
+function SonarDot({ color='#22C55E', size=7 }) {
+  return (
+    <span style={{ position:'relative', display:'inline-block', width:size, height:size }}>
+      <span style={{ position:'absolute', inset:-(size*0.5), borderRadius:'50%',
+        border:`1.5px solid ${color}`, animation:'sonar 2s ease-out infinite', opacity:0 }}/>
+      <span style={{ position:'absolute', inset:0, borderRadius:'50%', background:color }}/>
+    </span>
+  )
+}
+```
+
+```css
+@keyframes sonar {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+```
+
+- Single border ring (not a filled background expansion)
+- Scales to 2.4x max — never more
+- Works on any color
+
+---
+
+## Observability Stat Cards — Colored Dots
+
+Each stat card has a distinct color and a `SonarDot` in the top-right corner:
+
+| Stat | Color |
+|---|---|
+| Tokens used | `#7C3AED` (purple) |
+| Latency | `#0891B2` (cyan) |
+| Cost estimate | `#22C55E` (green) |
+| Nodes executed | `#F59E0B` (amber) |
+
+On hover: border takes the card's accent color at 40% opacity, shadow uses the color at 18% opacity.
+
+---
+
+## Chevron Flow Component
+
+Used for "How it works" (3 steps) and "Why AgentHub" (4 principles). SVG-based chevron arrows with content inside.
+
+### Polygon points
+```
+First arrow:  0,0  W-N,0  W,H/2  W-N,H  0,H
+Middle/last: N,0  W-N,0  W,H/2  W-N,H  N,H  0,H/2
+```
+Where `W=300`, `H=155`, `N=36` in the SVG viewBox.
+
+**Critical fix:** Middle arrows use `(N,H) (0,H/2)` — NOT `(0,H) (N,H/2)`. This ensures both sides of the V-notch are diagonal, not the left side being vertical.
+
+### Overlap behavior
+- `marginLeft: -2` on non-first arrows
+- `zIndex: items.length - index` (first arrow on top)
+- `preserveAspectRatio="none"` — scales to container width, edges stay proportional
+
+---
+
+## DAG WorkflowPanel — Draggable SVG
+
+The hero right panel is a live draggable SVG node graph. Key implementation notes:
+
+- **Positions in state:** node `cx` and `y` stored in `useState`, initialized to starting layout
+- **Drag:** `onMouseDown` on each `<g>` node captures SVG-coordinate offset; `onMouseMove` on the `<svg>` updates state; `onMouseUp`/`onMouseLeave` ends drag
+- **Coordinate conversion:** `(mouseX - rect.left) * (VW / rect.width)` where VW=346
+- **Edges:** computed from current positions on every render — no separate edge state
+- **Font:** uses Inter (`"Inter",-apple-system,BlinkMacSystemFont,sans-serif`) — matches the page font, NOT monospace
+- **Text colors on dark canvas:** avoid colors below `#6868A0` — they disappear on `#070707` background
+- **Pending node text:** `#7878A0` for label, `#6868A0` for sub — minimum readable on dark
+
+### Node states and their visual treatment
+| State | Dot style | Border opacity | Label color |
+|---|---|---|---|
+| `done` | Solid + checkmark | 44% | `#F0F0F8` |
+| `running` | Solid + sonar ring | 88% | `#F0F0F8` |
+| `waiting` | Solid 45% opacity | 18% | `#F0F0F8` |
+| `pending` | Outline ring | 18% | `#7878A0` |
+
+---
+
+## How It Works — Numbered Steps Layout
+
+The "How it works" section uses a vertical timeline connector, NOT chevron arrows (chevrons are only for the content areas).
+
+```
+[● 01]  Title text
+[│]     Description paragraph
+[● 02]  Title text
+[│]     Description paragraph
+[● 03]  Title text
+        Description paragraph (no line after last)
+```
+
+- Step number circle: 32px, `border: 1.5px solid T.border`, `background: T.surface2`
+- Vertical line: `1px solid T.border`, `minHeight: 28px`, `margin: 8px 0`
+- Combined into a `display:'flex', gap:20` flex row per step
+
+---
+
+## Footer Architecture
+
+```
+footer
+├── [Main content area — maxWidth:1400, padding:32px 40px 28px]
+│   ├── [4-column grid]
+│   │   ├── Brand col (2fr)
+│   │   │   ├── Logo (Zap + AgentHub + tagline)
+│   │   │   ├── Description paragraph
+│   │   │   └── Founder card (compact, inline-flex, width:fit-content)
+│   │   ├── Product col (1fr)
+│   │   │   ├── API Docs → /docs
+│   │   │   └── GitHub → github.com/nik1609
+│   │   ├── Node types col (1fr)
+│   │   │   └── 8 nodes with colored dots + names
+│   │   └── Company col (1fr)
+│   │       ├── Sign up (opens modal)
+│   │       ├── Sign in (opens modal)
+│   │       ├── Contact us → #lp-contact
+│   │       └── Why AgentHub → #lp-why
+│   └── [Bottom bar]
+│       ├── © 2026 AgentHub · Built for engineers who move fast.
+│       └── [All systems operational — SonarDot + text]
+```
+
+### Founder card (inside brand column)
+```tsx
+display: 'inline-flex'   // shrinks to content width — NOT block/stretch
+padding: '10px 14px'
+background: T.surface3
+border: 1px solid T.border
+borderRadius: 10
+
+Contents:
+  [30px circular photo]
+  [div:
+    "BUILT BY" (9px, uppercase, T.text3)
+    "Nikhil Kumar" (12px bold) + [GitHub icon] + [LinkedIn icon]
+  ]
+```
+
+**Label:** "Built by" — NOT "Founder & Engineer" and NOT including a job title subtitle.
+
+---
+
+## Favicon
+
+File: `/public/icon.svg`
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#2563EB"/>
+  <path d="M18 4L8 18h8l-2 10 12-14h-8l2-10z" fill="white" stroke="white" stroke-width="0.5"/>
+</svg>
+```
+
+Blue rounded square (`#2563EB`) with white lightning bolt. Matches the Zap icon used throughout.
+
+---
+
+## Multi-Agent Systems (MAS) — Positioning
+
+**Do not describe MAS as "coming soon."** The platform already IS a multi-agent system:
+
+> Every pipeline is a multi-agent system. Each node runs with its own LLM, tools, and memory. Connect any topology on the same visual canvas.
+
+This is shown in the Why section as a green "Already here" callout, not an amber "Coming soon" badge.
+
+---
+
+## Scroll Offset Fix
+
+All sections with anchor IDs have `scroll-margin-top: 80px` applied via:
+
+```css
+[id] { scroll-margin-top: 80px; }
+```
+
+This accounts for the 64px sticky nav plus 16px breathing room. Without this, clicking "Why?", "Contact us", or any internal anchor lands the section behind the nav.
+
+---
+
+## Auth Flow
+
+- `/login` page **redirects to `/`** permanently — sign-in is handled via modal on the landing page
+- Clicking "Sign in" anywhere opens `AuthModal` with `mode='signin'`
+- Clicking "Sign up" / "Get started" opens `AuthModal` with `mode='signup'`
+- After successful sign-in: `router.push('/agents')`
+- After sign-out from dashboard: `router.push('/')` (not `/login`)
